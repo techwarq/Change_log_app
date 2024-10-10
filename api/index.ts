@@ -10,7 +10,10 @@ dotenv.config();
 const app = express();
 const prisma = new PrismaClient();
 
-app.use(cors());
+app.use(cors({
+  origin: 'https://change-log-app.vercel.app',
+  credentials: true,
+}));
 app.use(express.json());
 
 // GitHub API configuration
@@ -49,14 +52,19 @@ app.get('/auth/github', (req: Request, res: Response) => {
 });
 
 // GitHub OAuth callback route
+// GitHub OAuth callback route
 app.get('/auth/github/callback', async (req: Request, res: Response) => {
   const { code } = req.query;
 
+  console.log('Received callback with code:', code);
+
   if (!code || typeof code !== 'string') {
+    console.error('Invalid code received');
     return res.status(400).json({ error: 'Invalid code' });
   }
 
   try {
+    console.log('Attempting to exchange code for access token');
     const response = await axios.post<GitHubAuthResponse>('https://github.com/login/oauth/access_token', {
       client_id: GITHUB_CLIENT_ID,
       client_secret: GITHUB_CLIENT_SECRET,
@@ -68,20 +76,43 @@ app.get('/auth/github/callback', async (req: Request, res: Response) => {
       },
     });
 
+    console.log('GitHub API response:', JSON.stringify(response.data, null, 2));
+
     const { access_token } = response.data;
 
-    // Save the access token to the database
-    const user = await prisma.user.create({
-      data: {
-        githubToken: access_token,
-      },
-    });
+    if (!access_token) {
+      console.error('No access token received from GitHub');
+      return res.status(500).json({ error: 'Failed to obtain access token' });
+    }
 
-    // Redirect to the frontend with the user ID
-    res.redirect(`http://change-log-app.vercel.app/dashboard?userId=${user.id}`);
+    console.log('Access token obtained successfully');
+
+    // Save the access token to the database
+    try {
+      console.log('Attempting to save access token to database');
+      const user = await prisma.user.create({
+        data: {
+          githubToken: access_token,
+        },
+      });
+      console.log('User created in database:', user.id);
+
+      // Redirect to the frontend with the user ID
+      const redirectUrl = `http://change-log-app.vercel.app/dashboard?userId=${user.id}`;
+      console.log('Redirecting to:', redirectUrl);
+      return res.redirect(redirectUrl);
+    } catch (dbError) {
+      console.error('Database error:', dbError);
+      return res.status(500).json({ error: 'Failed to save user data' });
+    }
   } catch (error) {
     console.error('Error during GitHub authentication:', error);
-    res.status(500).json({ error: 'Authentication failed' });
+    if (axios.isAxiosError(error) && error.response) {
+      console.error('GitHub API error response:', error.response.data);
+      console.error('GitHub API error status:', error.response.status);
+      console.error('GitHub API error headers:', error.response.headers);
+    }
+    return res.status(500).json({ error: 'Authentication failed' });
   }
 });
 
