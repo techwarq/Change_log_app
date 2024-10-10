@@ -4,15 +4,12 @@ import morgan from "morgan";
 import cors from 'cors';
 import bodyParser from 'body-parser';
 import dotenv from "dotenv";
-import { PrismaClient } from "@prisma/client";
 import axios from 'axios';
-import { getRepos, getCommits } from './api';
 import session from 'express-session';
 
 dotenv.config();
 
 const app = express();
-const prisma = new PrismaClient();
 
 app.use(express.json());
 app.use(helmet());
@@ -48,6 +45,22 @@ interface GitHubUser {
   name: string | null;
 }
 
+interface Repo {
+  name: string;
+  full_name: string;
+}
+
+interface Commit {
+  sha: string;
+  commit: {
+    message: string;
+    author: {
+      name: string;
+      date: string;
+    }
+  }
+}
+
 app.get("/", (_req: Request, res: Response) => {
   res.send(`
     <html>
@@ -78,7 +91,6 @@ app.get('/auth/github/callback', async (req: Request, res: Response) => {
   }
 
   try {
-    console.log("Exchanging code for access token");
     const tokenResponse = await axios.post<{ access_token: string }>('https://github.com/login/oauth/access_token', {
       client_id: process.env.CLIENT_ID,
       client_secret: process.env.CLIENT_SECRET,
@@ -90,33 +102,24 @@ app.get('/auth/github/callback', async (req: Request, res: Response) => {
     });
 
     const accessToken = tokenResponse.data.access_token;
-    console.log("Access token received");
 
-    console.log("Fetching user information");
     const userResponse = await axios.get<GitHubUser>('https://api.github.com/user', {
       headers: {
         Authorization: `token ${accessToken}`
       }
     });
 
-    const { login, name } = userResponse.data;
-    console.log(`User info received. Login: ${login}, Name: ${name || login}`);
+    const { login } = userResponse.data;
 
     if (req.session) {
       req.session.accessToken = accessToken;
       req.session.username = login;
-      console.log("Access token and username stored in session");
     }
 
-    console.log("Redirecting to dashboard");
     res.redirect('/dashboard');
   } catch (error) {
     console.error('Error during GitHub authentication:', error);
-    if (axios.isAxiosError(error) && error.response) {
-      console.error('Error response:', error.response.data);
-      console.error('Error status:', error.response.status);
-    }
-    res.status(500).send('An error occurred during authentication. Please check server logs for more details.');
+    res.status(500).send('An error occurred during authentication.');
   }
 });
 
@@ -137,24 +140,19 @@ app.get('/dashboard', async (req: Request, res: Response) => {
           <p>Select a repository to view its changelog:</p>
           <div id="repos">
             ${repos.map(repo => `
-              <button onclick="loadCommits('${repo.fullName}')">${repo.name}</button>
+              <button onclick="loadCommits('${repo.full_name}')">${repo.name}</button>
             `).join('')}
           </div>
           <div id="commits"></div>
           <script>
             function loadCommits(fullName) {
               fetch('/api/repos/' + fullName + '/commits')
-                .then(response => {
-                  if (!response.ok) {
-                    throw new Error('Network response was not ok');
-                  }
-                  return response.json();
-                })
+                .then(response => response.json())
                 .then(commits => {
                   const commitsDiv = document.getElementById('commits');
                   commitsDiv.innerHTML = '<h2>Commits for ' + fullName + '</h2>';
                   commits.forEach(commit => {
-                    commitsDiv.innerHTML += '<p>' + commit.message + ' - ' + commit.author + ' (' + commit.date + ')</p>';
+                    commitsDiv.innerHTML += '<p>' + commit.commit.message + ' - ' + commit.commit.author.name + ' (' + commit.commit.author.date + ')</p>';
                   });
                 })
                 .catch(error => {
@@ -186,6 +184,31 @@ app.get('/api/repos/:owner/:repo/commits', async (req: Request, res: Response) =
     res.status(500).json({ error: 'Failed to fetch commits' });
   }
 });
+
+async function getRepos(accessToken: string): Promise<Repo[]> {
+  const response = await axios.get<Repo[]>('https://api.github.com/user/repos', {
+    headers: {
+      Authorization: `token ${accessToken}`
+    },
+    params: {
+      sort: 'updated',
+      per_page: 100
+    }
+  });
+  return response.data;
+}
+
+async function getCommits(accessToken: string, owner: string, repo: string): Promise<Commit[]> {
+  const response = await axios.get<Commit[]>(`https://api.github.com/repos/${owner}/${repo}/commits`, {
+    headers: {
+      Authorization: `token ${accessToken}`
+    },
+    params: {
+      per_page: 100
+    }
+  });
+  return response.data;
+}
 
 const PORT = process.env.PORT || 3004;
 app.listen(PORT, () => console.log(`Server ready on port ${PORT}`));
