@@ -142,32 +142,34 @@ app.get('/api/dashboard/repos', async (req: Request, res: Response) => {
   }
 });
 app.get('/api/dashboard/commits/:repoFullName', async (req: Request, res: Response) => {
+  console.log('Received request for commits:', req.params, req.query);
   const { repoFullName } = req.params;
   const { userId } = req.query;
 
-  // Validate userId
   if (!userId || typeof userId !== 'string') {
+    console.log('Invalid userId:', userId);
     return res.status(400).json({ error: 'Invalid userId' });
   }
 
   try {
-    // Retrieve user from the database
+    console.log('Fetching user from database...');
     const user = await prisma.user.findUnique({
       where: { id: parseInt(userId) },
     });
 
     if (!user) {
+      console.log('User not found:', userId);
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Fetch commits from GitHub
+    console.log('Fetching commits from GitHub...');
     const response = await axios.get<GitHubCommit[]>(`https://api.github.com/repos/${repoFullName}/commits`, {
       headers: {
         Authorization: `token ${user.githubToken}`,
       },
     });
 
-    // Map commits to desired format
+    console.log('Received response from GitHub');
     const commits = response.data.map(commit => ({
       sha: commit.sha,
       message: commit.commit.message,
@@ -175,11 +177,18 @@ app.get('/api/dashboard/commits/:repoFullName', async (req: Request, res: Respon
       date: commit.commit.author.date,
     }));
 
-    // Return commits as JSON
+    console.log('Sending response...');
     res.json(commits);
   } catch (error) {
     console.error('Error fetching commits:', error);
-    res.status(500).json({ error: 'Failed to fetch commits' });
+    if (axios.isAxiosError(error)) {
+      console.error('GitHub API error:', error.response?.data);
+      return res.status(error.response?.status || 500).json({ 
+        error: 'Failed to fetch commits', 
+        details: error.response?.data 
+      });
+    }
+    res.status(500).json({ error: 'Failed to fetch commits', });
   }
 });
 
