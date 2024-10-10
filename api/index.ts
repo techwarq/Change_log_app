@@ -16,7 +16,7 @@ app.use(express.json());
 // GitHub API configuration
 const GITHUB_CLIENT_ID = process.env.CLIENT_ID;
 const GITHUB_CLIENT_SECRET = process.env.CLIENT_SECRET;
-const GITHUB_REDIRECT_URI = process.env.REDIRECT_URI || 'http://change-log-app.vercel.app/callback';
+const GITHUB_REDIRECT_URI =  'http://change-log-app.vercel.app/auth/github/callback';
 
 interface GitHubAuthResponse {
   access_token: string;
