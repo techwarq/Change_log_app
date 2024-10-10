@@ -163,7 +163,12 @@ app.get('/api/dashboard/commits/:repoFullName', async (req: Request, res: Respon
     }
 
     console.log('Fetching commits from GitHub...');
-    const response = await axios.get<GitHubCommit[]>(`https://api.github.com/repos/${repoFullName}/commits`, {
+    const [owner, repo] = repoFullName.split('/');
+    if (!owner || !repo) {
+      return res.status(400).json({ error: 'Invalid repository name format' });
+    }
+
+    const response = await axios.get<GitHubCommit[]>(`https://api.github.com/repos/${owner}/${repo}/commits`, {
       headers: {
         Authorization: `token ${user.githubToken}`,
       },
@@ -191,7 +196,6 @@ app.get('/api/dashboard/commits/:repoFullName', async (req: Request, res: Respon
     res.status(500).json({ error: 'Failed to fetch commits', });
   }
 });
-
 const PORT = process.env.PORT || 3004;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
