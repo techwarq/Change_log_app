@@ -132,6 +132,7 @@ app.get('/api/dashboard/repos', async (req: Request, res: Response) => {
       id: repo.id,
       name: repo.name,
       fullName: repo.full_name,
+      commitsUrl: `/api/dashboard/commits/${repo.full_name}?userId=${userId}` 
     }));
 
     res.json(repos);
