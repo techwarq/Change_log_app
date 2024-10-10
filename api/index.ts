@@ -1,4 +1,3 @@
-// File: src/app.ts
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import { PrismaClient } from '@prisma/client';
@@ -34,7 +33,7 @@ interface GitHubCommit {
 }
 
 app.use(cors({
-  origin: 'https://change-log-app.vercel.app',
+  origin: ['https://change-log-app.vercel.app', 'http://localhost:3000'],
   credentials: true,
 }));
 app.use(express.json());
@@ -90,6 +89,7 @@ app.get('/oauth-callback', async ({ query: { code } }, res) => {
     return res.status(500).json({ error: 'Authentication failed' });
   }
 });
+
 app.get('/dashboard', async (req: Request, res: Response) => {
   const { userId } = req.query;
 
@@ -98,24 +98,8 @@ app.get('/dashboard', async (req: Request, res: Response) => {
   }
 
   try {
-    const response = await axios.get(`https://change-log-app.vercel.app/api/dashboard/repos?userId=${userId}`);
-    res.json(response.data); // Send repos to the dashboard
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch repositories' });
-  }
-});
-
-
-app.get('/api/dashboard/repos', async (req: Request, res: Response) => {
-  const { userId } = req.query;
-
-  if (!userId || typeof userId !== 'string') {
-    return res.status(400).json({ error: 'Invalid userId' });
-  }
-
-  try {
     const user = await prisma.user.findUnique({
-      where: { id: parseInt(userId) },
+      where: { id: parseInt(userId as string) },
     });
 
     if (!user) {
@@ -128,23 +112,36 @@ app.get('/api/dashboard/repos', async (req: Request, res: Response) => {
       },
     });
 
-    const repos = response.data.map(repo => ({
-      id: repo.id,
-      name: repo.name,
-      fullName: repo.full_name,
-      commitsUrl: `/api/dashboard/commits/${repo.full_name}?userId=${userId}` 
-    }));
+    const repoLinks = response.data.map(repo => `
+      <li>
+        <a href="/api/dashboard/commits/${repo.full_name}?userId=${userId}" target="_blank">
+          ${repo.name}
+        </a>
+      </li>
+    `).join('');
 
-    res.json(repos);
+    const html = `
+      <html>
+        <body>
+          <h1>Your Repositories</h1>
+          <ul>
+            ${repoLinks}
+          </ul>
+        </body>
+      </html>
+    `;
+
+    res.send(html);
   } catch (error) {
     console.error('Error fetching repositories:', error);
     res.status(500).json({ error: 'Failed to fetch repositories' });
   }
 });
+
 app.get('/api/dashboard/commits/:repoFullName', async (req: Request, res: Response) => {
   console.log('Received request for commits:', req.params, req.query);
   const { repoFullName } = req.params;
-  const { userId } = req.query;
+  const { userId, since = '2019-05-06T00:00:00Z' } = req.query;
 
   if (!userId || typeof userId !== 'string') {
     console.log('Invalid userId:', userId);
@@ -168,11 +165,19 @@ app.get('/api/dashboard/commits/:repoFullName', async (req: Request, res: Respon
       return res.status(400).json({ error: 'Invalid repository name format' });
     }
 
-    const response = await axios.get<GitHubCommit[]>(`https://api.github.com/repos/${owner}/${repo}/commits`, {
-      headers: {
-        Authorization: `token ${user.githubToken}`,
-      },
-    });
+    const response = await axios.get<GitHubCommit[]>(
+      `https://api.github.com/repos/${owner}/${repo}/commits`,
+      {
+        params: {
+          sha: process.env.SHA || 'main',  // Use 'main' as default if SHA is not set
+          per_page: 100,
+          since: since
+        },
+        headers: {
+          Authorization: `token ${user.githubToken}`,
+        },
+      }
+    );
 
     console.log('Received response from GitHub');
     const commits = response.data.map(commit => ({
@@ -193,9 +198,10 @@ app.get('/api/dashboard/commits/:repoFullName', async (req: Request, res: Respon
         details: error.response?.data 
       });
     }
-    res.status(500).json({ error: 'Failed to fetch commits', });
+    res.status(500).json({ error: 'Failed to fetch commits' });
   }
 });
+
 const PORT = process.env.PORT || 3004;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
