@@ -76,7 +76,7 @@ app.get('/oauth-callback', async ({ query: { code } }, res) => {
       },
     });
 
-    console.log('User created in database:', user.id);
+    console.log('User  created in database:', user.id);
 
     const redirectUrl = `http://change-log-app.vercel.app/dashboard?userId=${user.id}`;
     console.log('Redirecting to:', redirectUrl);
@@ -103,7 +103,7 @@ app.get('/dashboard', async (req: Request, res: Response) => {
     });
 
     if (!user) {
-      return res.status(404).json({ error: 'User not found' });
+      return res.status(404).json({ error: 'User  not found' });
     }
 
     const response = await axios.get<GitHubRepo[]>('https://api.github.com/user/repos', {
@@ -155,7 +155,7 @@ app.get('/api/dashboard/commits/:repoFullName', async (req: Request, res: Respon
     });
 
     if (!user) {
-      console.log('User not found:', userId);
+      console.log('User  not found:', userId);
       return res.status(404).json({ error: 'User not found' });
     }
 
@@ -169,7 +169,6 @@ app.get('/api/dashboard/commits/:repoFullName', async (req: Request, res: Respon
       `https://api.github.com/repos/${owner}/${repo}/commits`,
       {
         params: {
-          sha: process.env.SHA || 'main',  // Use 'main' as default if SHA is not set
           per_page: 100,
           since: since
         },
