@@ -141,16 +141,17 @@ app.get('/api/dashboard/repos', async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Failed to fetch repositories' });
   }
 });
-
 app.get('/api/dashboard/commits/:repoFullName', async (req: Request, res: Response) => {
   const { repoFullName } = req.params;
   const { userId } = req.query;
 
+  // Validate userId
   if (!userId || typeof userId !== 'string') {
     return res.status(400).json({ error: 'Invalid userId' });
   }
 
   try {
+    // Retrieve user from the database
     const user = await prisma.user.findUnique({
       where: { id: parseInt(userId) },
     });
@@ -159,12 +160,14 @@ app.get('/api/dashboard/commits/:repoFullName', async (req: Request, res: Respon
       return res.status(404).json({ error: 'User not found' });
     }
 
+    // Fetch commits from GitHub
     const response = await axios.get<GitHubCommit[]>(`https://api.github.com/repos/${repoFullName}/commits`, {
       headers: {
         Authorization: `token ${user.githubToken}`,
       },
     });
 
+    // Map commits to desired format
     const commits = response.data.map(commit => ({
       sha: commit.sha,
       message: commit.commit.message,
@@ -172,6 +175,7 @@ app.get('/api/dashboard/commits/:repoFullName', async (req: Request, res: Respon
       date: commit.commit.author.date,
     }));
 
+    // Return commits as JSON
     res.json(commits);
   } catch (error) {
     console.error('Error fetching commits:', error);
