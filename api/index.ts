@@ -8,7 +8,6 @@ import { PrismaClient } from "@prisma/client";
 import axios from 'axios';
 import { getRepos, getCommits } from './api';
 import session from 'express-session';
-import checkRateLimits from './ratelimitChecker';
 
 dotenv.config();
 
@@ -40,20 +39,13 @@ app.use(session({
 declare module 'express-session' {
   interface SessionData {
     accessToken?: string;
+    username?: string;
   }
 }
 
 interface GitHubUser {
-  email: string | null;
-  name: string | null;
   login: string;
-}
-
-interface GitHubEmail {
-  email: string;
-  primary: boolean;
-  verified: boolean;
-  visibility: string | null;
+  name: string | null;
 }
 
 app.get("/", (_req: Request, res: Response) => {
@@ -75,7 +67,7 @@ app.get("/", (_req: Request, res: Response) => {
 });
 
 app.get('/auth/github', (_req: Request, res: Response) => {
-  const scope = 'user:email repo';
+  const scope = 'repo user:read';
   res.redirect(`https://github.com/login/oauth/authorize?client_id=${process.env.CLIENT_ID}&scope=${scope}`);
 });
 
@@ -86,6 +78,7 @@ app.get('/auth/github/callback', async (req: Request, res: Response) => {
   }
 
   try {
+    console.log("Exchanging code for access token");
     const tokenResponse = await axios.post<{ access_token: string }>('https://github.com/login/oauth/access_token', {
       client_id: process.env.CLIENT_ID,
       client_secret: process.env.CLIENT_SECRET,
@@ -97,57 +90,25 @@ app.get('/auth/github/callback', async (req: Request, res: Response) => {
     });
 
     const accessToken = tokenResponse.data.access_token;
-    await checkRateLimits(accessToken);
+    console.log("Access token received");
 
+    console.log("Fetching user information");
     const userResponse = await axios.get<GitHubUser>('https://api.github.com/user', {
       headers: {
         Authorization: `token ${accessToken}`
       }
     });
-    await checkRateLimits(accessToken);
 
-    let { email, name } = userResponse.data;
-
-    if (!email) {
-      const emailResponse = await axios.get<GitHubEmail[]>('https://api.github.com/user/emails', {
-        headers: {
-          Authorization: `token ${accessToken}`
-        }
-      });
-      await checkRateLimits(accessToken);
-      const primaryEmail = emailResponse.data.find(email => email.primary);
-      if (primaryEmail) {
-        email = primaryEmail.email;
-      }
-    }
-
-    if (!name) {
-      name = userResponse.data.login;
-    }
-
-    if (!email) {
-      throw new Error('Unable to retrieve email from GitHub');
-    }
-
-    const user = await prisma.user.upsert({
-      where: { email: email },
-      update: { 
-        accessToken: accessToken,
-        name: name
-      },
-      create: {
-        email: email,
-        name: name,
-        accessToken: accessToken,
-        password: '',
-        role: 'PUBLIC'
-      }
-    });
+    const { login, name } = userResponse.data;
+    console.log(`User info received. Login: ${login}, Name: ${name || login}`);
 
     if (req.session) {
       req.session.accessToken = accessToken;
+      req.session.username = login;
+      console.log("Access token and username stored in session");
     }
 
+    console.log("Redirecting to dashboard");
     res.redirect('/dashboard');
   } catch (error) {
     console.error('Error during GitHub authentication:', error);
@@ -166,14 +127,13 @@ app.get('/dashboard', async (req: Request, res: Response) => {
 
   try {
     const repos = await getRepos(req.session.accessToken);
-    await checkRateLimits(req.session.accessToken);
     res.send(`
       <html>
         <head>
           <title>Dashboard - GitHub Changelog Viewer</title>
         </head>
         <body>
-          <h1>Dashboard</h1>
+          <h1>Welcome, ${req.session.username || 'User'}!</h1>
           <p>Select a repository to view its changelog:</p>
           <div id="repos">
             ${repos.map(repo => `
@@ -220,7 +180,6 @@ app.get('/api/repos/:owner/:repo/commits', async (req: Request, res: Response) =
 
   try {
     const commits = await getCommits(req.session.accessToken, owner, repo);
-    await checkRateLimits(req.session.accessToken);
     res.json(commits);
   } catch (error) {
     console.error('Error fetching commits:', error);
@@ -228,17 +187,7 @@ app.get('/api/repos/:owner/:repo/commits', async (req: Request, res: Response) =
   }
 });
 
-const testDatabaseConnection = async (): Promise<void> => {
-  try {
-    await prisma.$connect();
-    console.log('Database connected successfully!');
-  } catch (error) {
-    console.error('Error connecting to the database:', error);
-  }
-};
-
-testDatabaseConnection().then(() => {
-  app.listen(3004, () => console.log("Server ready on port 3004."));
-});
+const PORT = process.env.PORT || 3004;
+app.listen(PORT, () => console.log(`Server ready on port ${PORT}`));
 
 export default app;
