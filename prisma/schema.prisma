@@ -22,17 +22,8 @@ model Commit {
 }
 
 model User {
-  id                Int      @id @default(autoincrement())
-  email             String   @unique
-  password          String   // Store hashed passwords
-  name              String?
-  role              UserRole @default(PUBLIC) // Role to distinguish between user types
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-  accessToken       String? 
-}
-
-enum UserRole {
-  PUBLIC
-  DEV
+  id          Int      @id @default(autoincrement())
+  githubToken String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
