@@ -42,7 +42,7 @@ interface GitHubCommit {
 }
 
 // Login route - redirects to GitHub OAuth
-app.get('/api/login', (req: Request, res: Response) => {
+app.get('/auth/github', (req: Request, res: Response) => {
   const githubAuthUrl = `https://github.com/login/oauth/authorize?client_id=${GITHUB_CLIENT_ID}`;
   res.redirect(githubAuthUrl);
 
