@@ -20,18 +20,29 @@ app.use(helmet.crossOriginResourcePolicy({ policy: "cross-origin" }));
 app.use(morgan("common"));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: false }));
-app.use(cors());
+
+// CORS configuration: Allow specific origins
+app.use(cors({
+  origin: process.env.CLIENT_ORIGIN || '*', // Set to your frontend's origin
+  credentials: true
+}));
+
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'your-secret-key',
+  secret: process.env.SESSION_SECRET || 'your-secret-key', // Use a strong, random secret
   resave: false,
   saveUninitialized: true,
-  cookie: { secure: process.env.NODE_ENV === 'production' }
+  cookie: { 
+    secure: process.env.NODE_ENV === 'production', // Only use secure cookies in production
+    httpOnly: true // Mitigates the risk of client-side script accessing the cookie
+  }
 }));
+
 declare module 'express-session' {
   interface SessionData {
     accessToken?: string;
   }
 }
+
 // Interfaces
 interface GitHubUser {
   email: string | null;
@@ -177,13 +188,22 @@ app.get('/dashboard', async (req: Request, res: Response) => {
           <script>
             function loadCommits(fullName) {
               fetch('/api/repos/' + fullName + '/commits')
-                .then(response => response.json())
+                .then(response => {
+                  if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                  }
+                  return response.json();
+                })
                 .then(commits => {
                   const commitsDiv = document.getElementById('commits');
                   commitsDiv.innerHTML = '<h2>Commits for ' + fullName + '</h2>';
                   commits.forEach(commit => {
                     commitsDiv.innerHTML += '<p>' + commit.message + ' - ' + commit.author + ' (' + commit.date + ')</p>';
                   });
+                })
+                .catch(error => {
+                  console.error('Error loading commits:', error);
+                  alert('Failed to load commits');
                 });
             }
           </script>
