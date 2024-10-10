@@ -19,6 +19,13 @@ interface GitHubRepo {
   id: number;
   name: string;
   full_name: string;
+  default_branch: string;
+}
+
+interface GitHubBranch {
+  commit: {
+    sha: string;
+  };
 }
 
 interface GitHubCommit {
@@ -76,7 +83,7 @@ app.get('/oauth-callback', async ({ query: { code } }, res) => {
       },
     });
 
-    console.log('User  created in database:', user.id);
+    console.log('User created in database:', user.id);
 
     const redirectUrl = `http://change-log-app.vercel.app/dashboard?userId=${user.id}`;
     console.log('Redirecting to:', redirectUrl);
@@ -103,7 +110,7 @@ app.get('/dashboard', async (req: Request, res: Response) => {
     });
 
     if (!user) {
-      return res.status(404).json({ error: 'User  not found' });
+      return res.status(404).json({ error: 'User not found' });
     }
 
     const response = await axios.get<GitHubRepo[]>('https://api.github.com/user/repos', {
@@ -114,7 +121,7 @@ app.get('/dashboard', async (req: Request, res: Response) => {
 
     const repoLinks = response.data.map(repo => `
       <li>
-        <a href="/api/dashboard/commits/${repo.full_name}?userId=${userId}" target="_blank">
+        <a href="/api/dashboard/commits/${encodeURIComponent(repo.full_name)}?userId=${userId}" target="_blank">
           ${repo.name}
         </a>
       </li>
@@ -155,20 +162,46 @@ app.get('/api/dashboard/commits/:repoFullName', async (req: Request, res: Respon
     });
 
     if (!user) {
-      console.log('User  not found:', userId);
+      console.log('User not found:', userId);
       return res.status(404).json({ error: 'User not found' });
     }
 
-    console.log('Fetching commits from GitHub...');
     const [owner, repo] = repoFullName.split('/');
     if (!owner || !repo) {
       return res.status(400).json({ error: 'Invalid repository name format' });
     }
 
-    const response = await axios.get<GitHubCommit[]>(
+    // Step 1: Fetch repository details to get the default branch
+    console.log('Fetching repository details...');
+    const repoResponse = await axios.get<GitHubRepo>(
+      `https://api.github.com/repos/${owner}/${repo}`,
+      {
+        headers: {
+          Authorization: `token ${user.githubToken}`,
+        },
+      }
+    );
+    const defaultBranch = repoResponse.data.default_branch;
+
+    // Step 2: Fetch the SHA of the default branch
+    console.log('Fetching default branch SHA...');
+    const branchResponse = await axios.get<GitHubBranch>(
+      `https://api.github.com/repos/${owner}/${repo}/branches/${defaultBranch}`,
+      {
+        headers: {
+          Authorization: `token ${user.githubToken}`,
+        },
+      }
+    );
+    const sha = branchResponse.data.commit.sha;
+
+    // Step 3: Fetch commits using the SHA
+    console.log('Fetching commits from GitHub...');
+    const commitsResponse = await axios.get<GitHubCommit[]>(
       `https://api.github.com/repos/${owner}/${repo}/commits`,
       {
         params: {
+          sha: sha,
           per_page: 100,
           since: since
         },
@@ -179,7 +212,7 @@ app.get('/api/dashboard/commits/:repoFullName', async (req: Request, res: Respon
     );
 
     console.log('Received response from GitHub');
-    const commits = response.data.map(commit => ({
+    const commits = commitsResponse.data.map(commit => ({
       sha: commit.sha,
       message: commit.commit.message,
       author: commit.commit.author.name,
