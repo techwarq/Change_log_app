@@ -5,7 +5,7 @@ import cors from 'cors';
 import bodyParser from 'body-parser';
 import dotenv from "dotenv";
 import axios from 'axios';
-import session from 'express-session';
+import crypto from 'crypto';
 
 dotenv.config();
 
@@ -18,28 +18,10 @@ app.use(morgan("common"));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: false }));
 
-app.use(cors({
-  origin: process.env.CLIENT_ORIGIN || '*',
-  credentials: true
-}));
+app.use(cors());
 
-app.use(session({
-  secret: process.env.SESSION_SECRET || 'your-secret-key',
-  resave: false,
-  saveUninitialized: false,
-  cookie: { 
-    secure: process.env.NODE_ENV === 'production',
-    httpOnly: true,
-    maxAge: 24 * 60 * 60 * 1000 // 24 hours
-  }
-}));
-
-declare module 'express-session' {
-  interface SessionData {
-    accessToken?: string;
-    username?: string;
-  }
-}
+// In-memory token store
+const tokenStore: { [key: string]: string } = {};
 
 interface GitHubUser {
   login: string;
@@ -81,19 +63,21 @@ app.get("/", (_req: Request, res: Response) => {
 });
 
 app.get('/auth/github', (_req: Request, res: Response) => {
+  const state = crypto.randomBytes(16).toString('hex');
   const scope = 'repo user:read';
-  const redirectUri = encodeURIComponent(`https://change-log-app.vercel.app/auth/github/callback`);
-  const authUrl = `https://github.com/login/oauth/authorize?client_id=${process.env.CLIENT_ID}&scope=${scope}&redirect_uri=${redirectUri}`;
+  const redirectUri = encodeURIComponent(`${process.env.SERVER_URL}/auth/github/callback`);
+  const authUrl = `https://github.com/login/oauth/authorize?client_id=${process.env.CLIENT_ID}&scope=${scope}&redirect_uri=${redirectUri}&state=${state}`;
   console.log('Redirecting to:', authUrl);
   res.redirect(authUrl);
 });
 
-
 app.get('/auth/github/callback', async (req: Request, res: Response) => {
   const code = req.query.code as string | undefined;
-  if (!code) {
-    console.error('No code provided in callback');
-    return res.status(400).send('No code provided');
+  const state = req.query.state as string | undefined;
+
+  if (!code || !state) {
+    console.error('No code or state provided in callback');
+    return res.status(400).send('No code or state provided');
   }
 
   try {
@@ -122,19 +106,11 @@ app.get('/auth/github/callback', async (req: Request, res: Response) => {
     const { login } = userResponse.data;
     console.log(`User info received. Login: ${login}`);
 
-    console.log('Session before setting token:', req.session);
-    req.session.accessToken = accessToken;
-    req.session.username = login;
-    console.log('Session after setting token:', req.session);
+    // Store the access token
+    tokenStore[login] = accessToken;
 
-    req.session.save((err) => {
-      if (err) {
-        console.error('Error saving session:', err);
-        return res.status(500).send('An error occurred during authentication.');
-      }
-      console.log("Session saved. Redirecting to dashboard");
-      res.redirect('/dashboard');
-    });
+    // Redirect to dashboard with user info in query params
+    res.redirect(`/dashboard?username=${encodeURIComponent(login)}`);
   } catch (error) {
     console.error('Error during GitHub authentication:', error);
     if (axios.isAxiosError(error) && error.response) {
@@ -144,22 +120,26 @@ app.get('/auth/github/callback', async (req: Request, res: Response) => {
     res.status(500).send('An error occurred during authentication. Please check server logs for more details.');
   }
 });
+
 app.get('/dashboard', async (req: Request, res: Response) => {
-  console.log('Session at dashboard:', req.session);
-  if (!req.session || !req.session.accessToken) {
-    console.log('No session or access token found. Redirecting to home.');
+  const username = req.query.username as string | undefined;
+  
+  if (!username || !tokenStore[username]) {
+    console.log('No username or access token found. Redirecting to home.');
     return res.redirect('/');
   }
 
+  const accessToken = tokenStore[username];
+
   try {
-    const repos = await getRepos(req.session.accessToken);
+    const repos = await getRepos(accessToken);
     res.send(`
       <html>
         <head>
           <title>Dashboard - GitHub Changelog Viewer</title>
         </head>
         <body>
-          <h1>Welcome, ${req.session.username || 'User'}!</h1>
+          <h1>Welcome, ${username}!</h1>
           <p>Select a repository to view its changelog:</p>
           <div id="repos">
             ${repos.map(repo => `
@@ -169,7 +149,7 @@ app.get('/dashboard', async (req: Request, res: Response) => {
           <div id="commits"></div>
           <script>
             function loadCommits(fullName) {
-              fetch('/api/repos/' + fullName + '/commits')
+              fetch('/api/repos/' + fullName + '/commits?username=${encodeURIComponent(username)}')
                 .then(response => response.json())
                 .then(commits => {
                   const commitsDiv = document.getElementById('commits');
@@ -195,25 +175,21 @@ app.get('/dashboard', async (req: Request, res: Response) => {
 
 app.get('/api/repos/:owner/:repo/commits', async (req: Request, res: Response) => {
   const { owner, repo } = req.params;
-  if (!req.session || !req.session.accessToken) {
+  const username = req.query.username as string | undefined;
+
+  if (!username || !tokenStore[username]) {
     return res.status(401).json({ error: 'Not authenticated' });
   }
 
+  const accessToken = tokenStore[username];
+
   try {
-    const commits = await getCommits(req.session.accessToken, owner, repo);
+    const commits = await getCommits(accessToken, owner, repo);
     res.json(commits);
   } catch (error) {
     console.error('Error fetching commits:', error);
     res.status(500).json({ error: 'Failed to fetch commits' });
   }
-});
-
-app.get('/session-check', (req: Request, res: Response) => {
-  res.json({
-    sessionExists: !!req.session,
-    accessTokenExists: !!req.session?.accessToken,
-    username: req.session?.username
-  });
 });
 
 async function getRepos(accessToken: string): Promise<Repo[]> {
