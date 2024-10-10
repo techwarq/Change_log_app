@@ -88,6 +88,7 @@ app.get('/auth/github', (_req: Request, res: Response) => {
   res.redirect(authUrl);
 });
 
+
 app.get('/auth/github/callback', async (req: Request, res: Response) => {
   const code = req.query.code as string | undefined;
   if (!code) {
@@ -109,7 +110,7 @@ app.get('/auth/github/callback', async (req: Request, res: Response) => {
     });
 
     const accessToken = tokenResponse.data.access_token;
-    console.log('Access token received');
+    console.log('Access token received:', accessToken ? 'Yes' : 'No');
 
     console.log('Fetching user information');
     const userResponse = await axios.get<GitHubUser>('https://api.github.com/user', {
@@ -121,9 +122,10 @@ app.get('/auth/github/callback', async (req: Request, res: Response) => {
     const { login } = userResponse.data;
     console.log(`User info received. Login: ${login}`);
 
+    console.log('Session before setting token:', req.session);
     req.session.accessToken = accessToken;
     req.session.username = login;
-    console.log("Access token and username stored in session");
+    console.log('Session after setting token:', req.session);
 
     req.session.save((err) => {
       if (err) {
@@ -142,7 +144,6 @@ app.get('/auth/github/callback', async (req: Request, res: Response) => {
     res.status(500).send('An error occurred during authentication. Please check server logs for more details.');
   }
 });
-
 app.get('/dashboard', async (req: Request, res: Response) => {
   console.log('Session at dashboard:', req.session);
   if (!req.session || !req.session.accessToken) {
