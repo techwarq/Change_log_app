@@ -10,17 +10,6 @@ dotenv.config();
 const app = express();
 const prisma = new PrismaClient();
 
-app.use(cors({
-  origin: 'https://change-log-app.vercel.app',
-  credentials: true,
-}));
-app.use(express.json());
-
-// GitHub API configuration
-const GITHUB_CLIENT_ID = process.env.CLIENT_ID;
-const GITHUB_CLIENT_SECRET = process.env.CLIENT_SECRET;
-const GITHUB_REDIRECT_URI =  'http://change-log-app.vercel.app/auth/github/callback';
-
 interface GitHubAuthResponse {
   access_token: string;
   token_type: string;
@@ -44,40 +33,35 @@ interface GitHubCommit {
   };
 }
 
-// Login route - redirects to GitHub OAuth
-app.get('/auth/github', (req: Request, res: Response) => {
-  const githubAuthUrl = `https://github.com/login/oauth/authorize?client_id=${GITHUB_CLIENT_ID}`;
-  res.redirect(githubAuthUrl);
+app.use(cors({
+  origin: 'https://change-log-app.vercel.app',
+  credentials: true,
+}));
+app.use(express.json());
 
+app.get('/', (req: Request, res: Response) => {
+  res.redirect('/auth');
 });
 
-// GitHub OAuth callback route
-// GitHub OAuth callback route
-app.get('/auth/github/callback', async (req: Request, res: Response) => {
-  const { code } = req.query;
+app.get('/auth', (req: Request, res: Response) => {
+  res.redirect(`https://github.com/login/oauth/authorize?client_id=${process.env.CLIENT_ID}`);
+});
 
-  console.log('Received callback with code:', code);
-
-  if (!code || typeof code !== 'string') {
-    console.error('Invalid code received');
-    return res.status(400).json({ error: 'Invalid code' });
+app.get('/oauth-callback', async ({ query: { code } }, res) => {
+  if (!code) {
+    return res.status(400).json({ error: 'Missing code parameter' });
   }
 
+  const body = {
+    client_id: process.env.CLIENT_ID,
+    client_secret: process.env.CLIENT_SECRET,
+    code,
+  };
+
+  const opts = { headers: { accept: 'application/json' } };
+
   try {
-    console.log('Attempting to exchange code for access token');
-    const response = await axios.post<GitHubAuthResponse>('https://github.com/login/oauth/access_token', {
-      client_id: GITHUB_CLIENT_ID,
-      client_secret: GITHUB_CLIENT_SECRET,
-      code,
-      redirect_uri: GITHUB_REDIRECT_URI,
-    }, {
-      headers: {
-        Accept: 'application/json',
-      },
-    });
-
-    console.log('GitHub API response:', JSON.stringify(response.data, null, 2));
-
+    const response = await axios.post<GitHubAuthResponse>('https://github.com/login/oauth/access_token', body, opts);
     const { access_token } = response.data;
 
     if (!access_token) {
@@ -87,36 +71,26 @@ app.get('/auth/github/callback', async (req: Request, res: Response) => {
 
     console.log('Access token obtained successfully');
 
-    // Save the access token to the database
-    try {
-      console.log('Attempting to save access token to database');
-      const user = await prisma.user.create({
-        data: {
-          githubToken: access_token,
-        },
-      });
-      console.log('User created in database:', user.id);
+    const user = await prisma.user.create({
+      data: {
+        githubToken: access_token,
+      },
+    });
 
-      // Redirect to the frontend with the user ID
-      const redirectUrl = `http://change-log-app.vercel.app/dashboard?userId=${user.id}`;
-      console.log('Redirecting to:', redirectUrl);
-      return res.redirect(redirectUrl);
-    } catch (dbError) {
-      console.error('Database error:', dbError);
-      return res.status(500).json({ error: 'Failed to save user data' });
-    }
+    console.log('User created in database:', user.id);
+
+    const redirectUrl = `http://change-log-app.vercel.app/dashboard?userId=${user.id}`;
+    console.log('Redirecting to:', redirectUrl);
+    return res.redirect(redirectUrl);
   } catch (error) {
     console.error('Error during GitHub authentication:', error);
     if (axios.isAxiosError(error) && error.response) {
       console.error('GitHub API error response:', error.response.data);
-      console.error('GitHub API error status:', error.response.status);
-      console.error('GitHub API error headers:', error.response.headers);
     }
     return res.status(500).json({ error: 'Authentication failed' });
   }
 });
 
-// Get user's repositories for dashboard
 app.get('/api/dashboard/repos', async (req: Request, res: Response) => {
   const { userId } = req.query;
 
@@ -152,7 +126,6 @@ app.get('/api/dashboard/repos', async (req: Request, res: Response) => {
   }
 });
 
-// Get commits for a repository
 app.get('/api/dashboard/commits/:repoFullName', async (req: Request, res: Response) => {
   const { repoFullName } = req.params;
   const { userId } = req.query;
