@@ -8,6 +8,7 @@ import { PrismaClient } from "@prisma/client";
 import axios from 'axios';
 import { getRepos, getCommits } from './api';
 import session from 'express-session';
+import checkRateLimits from './ratelimitChecker';
 
 dotenv.config();
 
@@ -21,19 +22,18 @@ app.use(morgan("common"));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: false }));
 
-// CORS configuration: Allow specific origins
 app.use(cors({
-  origin: process.env.CLIENT_ORIGIN || '*', // Set to your frontend's origin
+  origin: process.env.CLIENT_ORIGIN || '*',
   credentials: true
 }));
 
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'your-secret-key', // Use a strong, random secret
+  secret: process.env.SESSION_SECRET || 'your-secret-key',
   resave: false,
   saveUninitialized: true,
   cookie: { 
-    secure: process.env.NODE_ENV === 'production', // Only use secure cookies in production
-    httpOnly: true // Mitigates the risk of client-side script accessing the cookie
+    secure: process.env.NODE_ENV === 'production',
+    httpOnly: true
   }
 }));
 
@@ -43,7 +43,6 @@ declare module 'express-session' {
   }
 }
 
-// Interfaces
 interface GitHubUser {
   email: string | null;
   name: string | null;
@@ -57,7 +56,6 @@ interface GitHubEmail {
   visibility: string | null;
 }
 
-// Home Page Route with "Login with GitHub" Button
 app.get("/", (_req: Request, res: Response) => {
   res.send(`
     <html>
@@ -76,13 +74,11 @@ app.get("/", (_req: Request, res: Response) => {
   `);
 });
 
-// Redirect to GitHub for Authorization
 app.get('/auth/github', (_req: Request, res: Response) => {
   const scope = 'user:email repo';
   res.redirect(`https://github.com/login/oauth/authorize?client_id=${process.env.CLIENT_ID}&scope=${scope}`);
 });
 
-// GitHub OAuth Callback - Exchange Code for Access Token
 app.get('/auth/github/callback', async (req: Request, res: Response) => {
   const code = req.query.code as string | undefined;
   if (!code) {
@@ -90,7 +86,6 @@ app.get('/auth/github/callback', async (req: Request, res: Response) => {
   }
 
   try {
-    // Exchange code for access token
     const tokenResponse = await axios.post<{ access_token: string }>('https://github.com/login/oauth/access_token', {
       client_id: process.env.CLIENT_ID,
       client_secret: process.env.CLIENT_SECRET,
@@ -102,40 +97,38 @@ app.get('/auth/github/callback', async (req: Request, res: Response) => {
     });
 
     const accessToken = tokenResponse.data.access_token;
+    await checkRateLimits(accessToken);
 
-    // Get user information from GitHub
     const userResponse = await axios.get<GitHubUser>('https://api.github.com/user', {
       headers: {
         Authorization: `token ${accessToken}`
       }
     });
+    await checkRateLimits(accessToken);
 
     let { email, name } = userResponse.data;
 
-    // If email is not public, fetch it separately
     if (!email) {
       const emailResponse = await axios.get<GitHubEmail[]>('https://api.github.com/user/emails', {
         headers: {
           Authorization: `token ${accessToken}`
         }
       });
+      await checkRateLimits(accessToken);
       const primaryEmail = emailResponse.data.find(email => email.primary);
       if (primaryEmail) {
         email = primaryEmail.email;
       }
     }
 
-    // If name is not set, use the username
     if (!name) {
       name = userResponse.data.login;
     }
 
-    // Ensure email is not null before database operation
     if (!email) {
       throw new Error('Unable to retrieve email from GitHub');
     }
 
-    // Save or update user in the database
     const user = await prisma.user.upsert({
       where: { email: email },
       update: { 
@@ -146,12 +139,11 @@ app.get('/auth/github/callback', async (req: Request, res: Response) => {
         email: email,
         name: name,
         accessToken: accessToken,
-        password: '', // You might want to handle this differently
+        password: '',
         role: 'PUBLIC'
       }
     });
 
-    // Store access token in session
     if (req.session) {
       req.session.accessToken = accessToken;
     }
@@ -159,11 +151,14 @@ app.get('/auth/github/callback', async (req: Request, res: Response) => {
     res.redirect('/dashboard');
   } catch (error) {
     console.error('Error during GitHub authentication:', error);
-    res.status(500).send('An error occurred during authentication');
+    if (axios.isAxiosError(error) && error.response) {
+      console.error('Error response:', error.response.data);
+      console.error('Error status:', error.response.status);
+    }
+    res.status(500).send('An error occurred during authentication. Please check server logs for more details.');
   }
 });
 
-// Dashboard route
 app.get('/dashboard', async (req: Request, res: Response) => {
   if (!req.session || !req.session.accessToken) {
     return res.redirect('/');
@@ -171,6 +166,7 @@ app.get('/dashboard', async (req: Request, res: Response) => {
 
   try {
     const repos = await getRepos(req.session.accessToken);
+    await checkRateLimits(req.session.accessToken);
     res.send(`
       <html>
         <head>
@@ -216,9 +212,6 @@ app.get('/dashboard', async (req: Request, res: Response) => {
   }
 });
 
-// API Endpoints
-
-// Get commits for a specific repository
 app.get('/api/repos/:owner/:repo/commits', async (req: Request, res: Response) => {
   const { owner, repo } = req.params;
   if (!req.session || !req.session.accessToken) {
@@ -227,6 +220,7 @@ app.get('/api/repos/:owner/:repo/commits', async (req: Request, res: Response) =
 
   try {
     const commits = await getCommits(req.session.accessToken, owner, repo);
+    await checkRateLimits(req.session.accessToken);
     res.json(commits);
   } catch (error) {
     console.error('Error fetching commits:', error);
@@ -234,7 +228,6 @@ app.get('/api/repos/:owner/:repo/commits', async (req: Request, res: Response) =
   }
 });
 
-// Start Server and Test Database Connection
 const testDatabaseConnection = async (): Promise<void> => {
   try {
     await prisma.$connect();
