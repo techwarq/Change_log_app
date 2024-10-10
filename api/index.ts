@@ -26,10 +26,11 @@ app.use(cors({
 app.use(session({
   secret: process.env.SESSION_SECRET || 'your-secret-key',
   resave: false,
-  saveUninitialized: true,
+  saveUninitialized: false,
   cookie: { 
     secure: process.env.NODE_ENV === 'production',
-    httpOnly: true
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000 // 24 hours
   }
 }));
 
@@ -81,7 +82,10 @@ app.get("/", (_req: Request, res: Response) => {
 
 app.get('/auth/github', (_req: Request, res: Response) => {
   const scope = 'repo user:read';
-  res.redirect(`https://github.com/login/oauth/authorize?client_id=${process.env.CLIENT_ID}&scope=${scope}`);
+  const redirectUri = encodeURIComponent(`https://change-log-app.vercel.app/auth/github/callback`);
+  const authUrl = `https://github.com/login/oauth/authorize?client_id=${process.env.CLIENT_ID}&scope=${scope}&redirect_uri=${redirectUri}`;
+  console.log('Redirecting to:', authUrl);
+  res.redirect(authUrl);
 });
 
 app.get('/auth/github/callback', async (req: Request, res: Response) => {
@@ -117,25 +121,32 @@ app.get('/auth/github/callback', async (req: Request, res: Response) => {
     const { login } = userResponse.data;
     console.log(`User info received. Login: ${login}`);
 
-    if (req.session) {
-      req.session.accessToken = accessToken;
-      req.session.username = login;
-      console.log("Access token and username stored in session");
-    }
+    req.session.accessToken = accessToken;
+    req.session.username = login;
+    console.log("Access token and username stored in session");
 
-    console.log("Redirecting to dashboard");
-    return res.redirect('/dashboard');
+    req.session.save((err) => {
+      if (err) {
+        console.error('Error saving session:', err);
+        return res.status(500).send('An error occurred during authentication.');
+      }
+      console.log("Session saved. Redirecting to dashboard");
+      res.redirect('/dashboard');
+    });
   } catch (error) {
     console.error('Error during GitHub authentication:', error);
     if (axios.isAxiosError(error) && error.response) {
       console.error('Error response:', error.response.data);
       console.error('Error status:', error.response.status);
     }
-    return res.status(500).send('An error occurred during authentication. Please check server logs for more details.');
+    res.status(500).send('An error occurred during authentication. Please check server logs for more details.');
   }
 });
+
 app.get('/dashboard', async (req: Request, res: Response) => {
+  console.log('Session at dashboard:', req.session);
   if (!req.session || !req.session.accessToken) {
+    console.log('No session or access token found. Redirecting to home.');
     return res.redirect('/');
   }
 
@@ -194,6 +205,14 @@ app.get('/api/repos/:owner/:repo/commits', async (req: Request, res: Response) =
     console.error('Error fetching commits:', error);
     res.status(500).json({ error: 'Failed to fetch commits' });
   }
+});
+
+app.get('/session-check', (req: Request, res: Response) => {
+  res.json({
+    sessionExists: !!req.session,
+    accessTokenExists: !!req.session?.accessToken,
+    username: req.session?.username
+  });
 });
 
 async function getRepos(accessToken: string): Promise<Repo[]> {
