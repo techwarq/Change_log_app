@@ -87,10 +87,13 @@ app.get('/auth/github', (_req: Request, res: Response) => {
 app.get('/auth/github/callback', async (req: Request, res: Response) => {
   const code = req.query.code as string | undefined;
   if (!code) {
+    console.error('No code provided in callback');
     return res.status(400).send('No code provided');
   }
 
   try {
+    console.log('Received code:', code);
+    console.log('Exchanging code for access token');
     const tokenResponse = await axios.post<{ access_token: string }>('https://github.com/login/oauth/access_token', {
       client_id: process.env.CLIENT_ID,
       client_secret: process.env.CLIENT_SECRET,
@@ -102,7 +105,9 @@ app.get('/auth/github/callback', async (req: Request, res: Response) => {
     });
 
     const accessToken = tokenResponse.data.access_token;
+    console.log('Access token received');
 
+    console.log('Fetching user information');
     const userResponse = await axios.get<GitHubUser>('https://api.github.com/user', {
       headers: {
         Authorization: `token ${accessToken}`
@@ -110,19 +115,25 @@ app.get('/auth/github/callback', async (req: Request, res: Response) => {
     });
 
     const { login } = userResponse.data;
+    console.log(`User info received. Login: ${login}`);
 
     if (req.session) {
       req.session.accessToken = accessToken;
       req.session.username = login;
+      console.log("Access token and username stored in session");
     }
 
-    res.redirect('/dashboard');
+    console.log("Redirecting to dashboard");
+    return res.redirect('/dashboard');
   } catch (error) {
     console.error('Error during GitHub authentication:', error);
-    res.status(500).send('An error occurred during authentication.');
+    if (axios.isAxiosError(error) && error.response) {
+      console.error('Error response:', error.response.data);
+      console.error('Error status:', error.response.status);
+    }
+    return res.status(500).send('An error occurred during authentication. Please check server logs for more details.');
   }
 });
-
 app.get('/dashboard', async (req: Request, res: Response) => {
   if (!req.session || !req.session.accessToken) {
     return res.redirect('/');
