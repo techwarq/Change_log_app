@@ -29,6 +29,7 @@ model User {
   role              UserRole @default(PUBLIC) // Role to distinguish between user types
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
+  accessToken       String? 
 }
 
 enum UserRole {
