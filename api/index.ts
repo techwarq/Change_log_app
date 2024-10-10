@@ -52,7 +52,7 @@ app.get("/", (req, res) => {
 // Redirect to GitHub for Authorization
 app.get('/auth/github', (req, res) => {
   const clientId = process.env.CLIENT_ID;
-  res.redirect(`https://github.com/login/oauth/authorize?client_id=${clientId}&scope=repo`);
+  res.redirect(`https://github.com/login/oauth/authorize?client_id=${process.env.CLIENT_ID}`);
 });
 
 // GitHub OAuth Callback - Exchange Code for Access Token
