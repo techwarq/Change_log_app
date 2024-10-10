@@ -90,6 +90,21 @@ app.get('/oauth-callback', async ({ query: { code } }, res) => {
     return res.status(500).json({ error: 'Authentication failed' });
   }
 });
+app.get('/dashboard', async (req: Request, res: Response) => {
+  const { userId } = req.query;
+
+  if (!userId) {
+    return res.status(400).json({ error: 'Missing userId' });
+  }
+
+  try {
+    const response = await axios.get(`https://change-log-app.vercel.app/api/dashboard/repos?userId=${userId}`);
+    res.json(response.data); // Send repos to the dashboard
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch repositories' });
+  }
+});
+
 
 app.get('/api/dashboard/repos', async (req: Request, res: Response) => {
   const { userId } = req.query;
