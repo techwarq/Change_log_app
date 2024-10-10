@@ -49,7 +49,7 @@ app.get('/api/login', (req: Request, res: Response) => {
 });
 
 // GitHub OAuth callback route
-app.get('/api/callback', async (req: Request, res: Response) => {
+app.get('/auth/github/callback', async (req: Request, res: Response) => {
   const { code } = req.query;
 
   if (!code || typeof code !== 'string') {
