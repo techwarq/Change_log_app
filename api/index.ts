@@ -263,9 +263,8 @@ app.get('/api/dashboard/summarize/:repoFullName', async (req: Request, res: Resp
       return res.status(400).json({ error: 'Invalid repository name format' });
     }
 
-    // Fetch commits from GitHub (reusing the logic from the /api/dashboard/commits/:repoFullName route)
     console.log('Fetching commits from GitHub...');
-    const commitsResponse = await axios.get<GitHubCommit[]>(
+    const commitsResponse = await axios.get<GitHubCommitData[]>(
       `https://api.github.com/repos/${owner}/${repo}/commits`,
       {
         params: {
@@ -278,7 +277,7 @@ app.get('/api/dashboard/summarize/:repoFullName', async (req: Request, res: Resp
       }
     );
 
-    console.log('Received response from GitHub');
+    console.log('Received response from GitHub. Number of commits:', commitsResponse.data.length);
     const commits = commitsResponse.data.map(commit => ({
       sha: commit.sha,
       commit: {
@@ -290,30 +289,28 @@ app.get('/api/dashboard/summarize/:repoFullName', async (req: Request, res: Resp
       },
     }));
 
-    // Summarize commits
     console.log('Summarizing commits...');
-    const summary: CommitSummary = await summarizeCommits(commits);
+    const summary = await summarizeCommits(commits);
 
-    console.log('Sending summarized response...');
+    console.log('Summary generated successfully:', summary);
     res.json(summary);
   } catch (error) {
-    console.error('Error summarizing commits:', error);
-    if (error instanceof Error && error.message === 'Failed to parse summary correctly') {
-      return res.status(500).json({ 
-        error: 'Failed to generate a valid summary', 
-        details: 'The AI model output could not be correctly parsed'
-      });
+    console.error('Error in /api/dashboard/summarize route:', error);
+    if (error instanceof Error) {
+      console.error('Error message:', error.message);
+      console.error('Error stack:', error.stack);
     }
     if (axios.isAxiosError(error)) {
-      console.error('GitHub API error:', error.response?.data);
+      console.error('Axios error response:', error.response?.data);
       return res.status(error.response?.status || 500).json({ 
         error: 'Failed to summarize commits', 
         details: error.response?.data 
       });
     }
-    res.status(500).json({ error: 'Failed to summarize commits' });
+    res.status(500).json({ error: 'Failed to summarize commits', details: 'Check server logs for more information' });
   }
 });
+
 const PORT = process.env.PORT || 3004;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
