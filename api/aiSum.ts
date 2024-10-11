@@ -30,7 +30,7 @@ export const summarizeCommits = async (commits: GitHubCommitData[]): Promise<Com
       messages: [
         {
           role: "user",
-          content: `Summarize the following commit messages and provide a name, description, and tags. Format the response as follows:
+          content: `Summarize the following commit messages and provide a name, description, and tags. Format the response exactly as follows, without any additional text:
           Name: [A short, descriptive name for this set of commits]
           Description: [A brief summary of the main changes and their purpose]
           Tags: [comma-separated list of relevant tags]
@@ -39,8 +39,8 @@ export const summarizeCommits = async (commits: GitHubCommitData[]): Promise<Com
           ${commitMessages}`,
         },
       ],
-      model: "llama3-8b-8192",
-      temperature: 0,
+      model: "llama2-70b-4096",
+      temperature: 0.5,
       max_tokens: 500,
     });
 
@@ -50,13 +50,26 @@ export const summarizeCommits = async (commits: GitHubCommitData[]): Promise<Com
       throw new Error("Failed to generate summary from Groq API");
     }
 
-    const [nameLine, descriptionLine, tagsLine] = summary.split('\n');
+    // Parse the summary
+    const lines = summary.split('\n').filter(line => line.trim() !== '');
+    let name = '', description = '', tags: string[] = [];
 
-    return {
-      name: nameLine.replace('Name:', '').trim(),
-      description: descriptionLine.replace('Description:', '').trim(),
-      tags: tagsLine.replace('Tags:', '').split(',').map(tag => tag.trim()),
-    };
+    for (const line of lines) {
+      if (line.startsWith('Name:')) {
+        name = line.replace('Name:', '').trim();
+      } else if (line.startsWith('Description:')) {
+        description = line.replace('Description:', '').trim();
+      } else if (line.startsWith('Tags:')) {
+        tags = line.replace('Tags:', '').split(',').map(tag => tag.trim());
+      }
+    }
+
+    // Validate the parsed data
+    if (!name || !description || tags.length === 0) {
+      throw new Error("Failed to parse summary correctly");
+    }
+
+    return { name, description, tags };
   } catch (error) {
     console.error('Error in summarizeCommits:', error);
     throw new Error('Failed to summarize commits');

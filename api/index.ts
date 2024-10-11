@@ -298,6 +298,12 @@ app.get('/api/dashboard/summarize/:repoFullName', async (req: Request, res: Resp
     res.json(summary);
   } catch (error) {
     console.error('Error summarizing commits:', error);
+    if (error instanceof Error && error.message === 'Failed to parse summary correctly') {
+      return res.status(500).json({ 
+        error: 'Failed to generate a valid summary', 
+        details: 'The AI model output could not be correctly parsed'
+      });
+    }
     if (axios.isAxiosError(error)) {
       console.error('GitHub API error:', error.response?.data);
       return res.status(error.response?.status || 500).json({ 
