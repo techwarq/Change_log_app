@@ -18,7 +18,8 @@ model Commit {
   sha       String   @unique
   message   String
   author    String
-  timestamp DateTime
+  date      DateTime
+  repoFullName String
 }
 
 model User {

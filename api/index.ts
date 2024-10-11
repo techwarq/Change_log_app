@@ -16,6 +16,7 @@ interface GitHubAuthResponse {
   scope: string;
 }
 
+
 interface GitHubRepo {
   id: number;
   name: string;
@@ -145,7 +146,6 @@ app.get('/dashboard', async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Failed to fetch repositories' });
   }
 });
-
 app.get('/api/dashboard/commits/:repoFullName', async (req: Request, res: Response) => {
   console.log('Received request for commits:', req.params, req.query);
   const { repoFullName } = req.params;
@@ -204,7 +204,7 @@ app.get('/api/dashboard/commits/:repoFullName', async (req: Request, res: Respon
         params: {
           sha: sha,
           per_page: 100,
-          since: since
+          since: since,
         },
         headers: {
           Authorization: `token ${user.githubToken}`,
@@ -217,8 +217,28 @@ app.get('/api/dashboard/commits/:repoFullName', async (req: Request, res: Respon
       sha: commit.sha,
       message: commit.commit.message,
       author: commit.commit.author.name,
-      date: commit.commit.author.date,
+      date: new Date(commit.commit.author.date), // Convert to Date object
+      repoFullName: repoFullName, // Add repoFullName to each commit
     }));
+
+    // Step 4: Save commits in the database
+    console.log('Saving commits to database...');
+    const upsertPromises = commits.map(commit => 
+      prisma.commit.upsert({
+        where: { sha: commit.sha },
+        update: {},
+        create: {
+          sha: commit.sha,
+          message: commit.message,
+          author: commit.author,
+          date: commit.date,
+          repoFullName: commit.repoFullName,
+        },
+      })
+    );
+
+    // Execute all upsert operations concurrently
+    await Promise.all(upsertPromises);
 
     console.log('Sending response...');
     res.json(commits);
@@ -226,9 +246,9 @@ app.get('/api/dashboard/commits/:repoFullName', async (req: Request, res: Respon
     console.error('Error fetching commits:', error);
     if (axios.isAxiosError(error)) {
       console.error('GitHub API error:', error.response?.data);
-      return res.status(error.response?.status || 500).json({ 
-        error: 'Failed to fetch commits', 
-        details: error.response?.data 
+      return res.status(error.response?.status || 500).json({
+        error: 'Failed to fetch commits',
+        details: error.response?.data,
       });
     }
     res.status(500).json({ error: 'Failed to fetch commits' });
