@@ -237,52 +237,74 @@ app.get('/api/dashboard/commits/:repoFullName', async (req: Request, res: Respon
 
 
 
-app.get('/api/summarize-commits/:repoFullName', async (req: Request, res: Response) => {
+app.get('/api/dashboard/summarize/:repoFullName', async (req: Request, res: Response) => {
+  console.log('Received request for commit summarization:', req.params, req.query);
   const { repoFullName } = req.params;
   const { userId, since = '2019-05-06T00:00:00Z' } = req.query;
 
-  // Validate userId
   if (!userId || typeof userId !== 'string') {
+    console.log('Invalid userId:', userId);
     return res.status(400).json({ error: 'Invalid userId' });
   }
 
   try {
-    // Check if the user exists
-    const user = await prisma.user.findUnique({ where: { id: parseInt(userId) } });
+    console.log('Fetching user from database...');
+    const user = await prisma.user.findUnique({
+      where: { id: parseInt(userId) },
+    });
+
     if (!user) {
+      console.log('User not found:', userId);
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Fetch commits for the specified repository and time frame
-    const commits = await prisma.commit.findMany({
-      where: {
-        id: user.id, // Assuming you have a userId field in Commit
-        // You may need to add a repository field to the Commit model if necessary
-        timestamp: { gte: new Date(since as string) }
-      },
-      orderBy: { timestamp: 'desc' },
-      take: 100
-    });
+    const [owner, repo] = repoFullName.split('/');
+    if (!owner || !repo) {
+      return res.status(400).json({ error: 'Invalid repository name format' });
+    }
 
-    // Map commits to GitHubCommit format
-    const githubCommits: GitHubCommit[] = commits.map(commit => ({
+    // Fetch commits from GitHub (reusing the logic from the /api/dashboard/commits/:repoFullName route)
+    console.log('Fetching commits from GitHub...');
+    const commitsResponse = await axios.get<GitHubCommit[]>(
+      `https://api.github.com/repos/${owner}/${repo}/commits`,
+      {
+        params: {
+          per_page: 100,
+          since: since
+        },
+        headers: {
+          Authorization: `token ${user.githubToken}`,
+        },
+      }
+    );
+
+    console.log('Received response from GitHub');
+    const commits = commitsResponse.data.map(commit => ({
       sha: commit.sha,
       commit: {
-        message: commit.message,
+        message: commit.commit.message,
         author: {
-          name: commit.author, // Author field from Commit
-          date: commit.timestamp.toISOString() // Format date correctly
-        }
-      }
+          name: commit.commit.author.name,
+          date: commit.commit.author.date,
+        },
+      },
     }));
 
-    // Summarize commits using the provided summarizeCommits function
-    const summary: CommitSummary = await summarizeCommits(githubCommits);
+    // Summarize commits
+    console.log('Summarizing commits...');
+    const summary: CommitSummary = await summarizeCommits(commits);
 
-    // Send the summary response
+    console.log('Sending summarized response...');
     res.json(summary);
   } catch (error) {
     console.error('Error summarizing commits:', error);
+    if (axios.isAxiosError(error)) {
+      console.error('GitHub API error:', error.response?.data);
+      return res.status(error.response?.status || 500).json({ 
+        error: 'Failed to summarize commits', 
+        details: error.response?.data 
+      });
+    }
     res.status(500).json({ error: 'Failed to summarize commits' });
   }
 });
