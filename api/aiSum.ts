@@ -1,9 +1,10 @@
-import { Groq } from "groq-sdk";
+import { ChatGroq } from "@langchain/groq";
+import { ChatPromptTemplate } from "@langchain/core/prompts";
+import { StructuredOutputParser } from "langchain/output_parsers";
+import { z } from "zod";
 import dotenv from 'dotenv';
 
 dotenv.config();
-
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 export interface GitHubCommitData {
   sha: string;
@@ -22,6 +23,29 @@ export interface CommitSummary {
   tags: string[];
 }
 
+const commitSummarySchema = z.object({
+  name: z.string().describe("A short, descriptive title for this set of commits"),
+  description: z.string().describe("A brief summary of the main changes and their purpose"),
+  tags: z.array(z.string()).describe("An array of relevant tags"),
+});
+
+const parser = StructuredOutputParser.fromZodSchema(commitSummarySchema);
+
+const llm = new ChatGroq({
+  temperature: 0,
+  modelName: "llama-3.1-70b-versatile",
+  apiKey: process.env.GROQ_API_KEY,
+ 
+  
+});
+
+const prompt = ChatPromptTemplate.fromMessages([
+  ["system", "You are a helpful assistant that summarizes git commit messages. Provide a summary in the specified format."],
+  ["human", "Summarize these commits:\n{commits}\n\n{format_instructions}"],
+]);
+
+const chain = prompt.pipe(llm).pipe(parser);
+
 export const summarizeCommits = async (commits: GitHubCommitData[]): Promise<CommitSummary> => {
   console.log(`Starting summarization of ${commits.length} commits`);
 
@@ -34,60 +58,20 @@ export const summarizeCommits = async (commits: GitHubCommitData[]): Promise<Com
     const commitMessages = commits.map(commit => commit.commit.message).join("\n");
     console.log(`Prepared ${commits.length} commit messages for summarization`);
 
-    const chatCompletion = await groq.chat.completions.create({
-      messages: [
-        {
-          role: "user",
-          content: `Summarize the following commit messages and provide a name, description, and tags. Format the response exactly as follows, without any additional text:
-          Name: [A short, descriptive name for this set of commits]
-          Description: [A brief summary of the main changes and their purpose]
-          Tags: [comma-separated list of relevant tags]
-
-          Commit messages:
-          ${commitMessages}`,
-        },
-      ],
-      model: "llama2-70b-4096",
-      temperature: 0.5,
-      max_tokens: 500,
+    const result = await chain.invoke({
+      commits: commitMessages,
+      format_instructions: parser.getFormatInstructions(),
     });
 
-    const summary = chatCompletion.choices[0]?.message?.content;
-    console.log('Received summary from Groq API');
+    console.log('Received summary:', result);
 
-    if (!summary) {
-      throw new Error("Failed to generate summary from Groq API");
-    }
-
-    // Parse the summary
-    const lines = summary.split('\n').filter(line => line.trim() !== '');
-    let name = '', description = '', tags: string[] = [];
-
-    for (const line of lines) {
-      if (line.startsWith('Name:')) {
-        name = line.replace('Name:', '').trim();
-      } else if (line.startsWith('Description:')) {
-        description = line.replace('Description:', '').trim();
-      } else if (line.startsWith('Tags:')) {
-        tags = line.replace('Tags:', '').split(',').map(tag => tag.trim()).filter(tag => tag !== '');
-      }
-    }
-
-    console.log('Parsed summary:', { name, description, tags: tags.join(', ') });
-
-    // Validate the parsed data
-    if (!name) name = 'Untitled Changes';
-    if (!description) description = 'No description provided.';
-    if (tags.length === 0) tags = ['untagged'];
-
-    return { name, description, tags };
+    return result;
   } catch (error) {
     console.error('Error in summarizeCommits:', error);
     if (error instanceof Error) {
       console.error('Error message:', error.message);
       console.error('Error stack:', error.stack);
     }
-    // Instead of throwing a new error, we'll return a default summary
     return {
       name: 'Error in Summarization',
       description: 'An error occurred while trying to summarize the commits. Please try again later or contact support if the problem persists.',
