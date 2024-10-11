@@ -283,34 +283,34 @@ app.get('/api/dashboard/summarize/:repoFullName', async (req: Request, res: Resp
       return res.status(400).json({ error: 'Invalid repository name format' });
     }
 
-    console.log('Fetching commits from GitHub...');
-    const commitsResponse = await axios.get<GitHubCommitData[]>(
-      `https://api.github.com/repos/${owner}/${repo}/commits`,
-      {
-        params: {
-          per_page: 100,
-          since: since
-        },
-        headers: {
-          Authorization: `token ${user.githubToken}`,
-        },
-      }
-    );
+    // Step 1: Fetch commits from the database
+    console.log('Fetching commits from database...');
+    const commits = await prisma.commit.findMany({
+      where: {
+        repoFullName: repoFullName,
+        
+      },
+      orderBy: {
+        date: 'asc', // Order commits by date, if needed
+      },
+    });
 
-    console.log('Received response from GitHub. Number of commits:', commitsResponse.data.length);
-    const commits = commitsResponse.data.map(commit => ({
+    console.log('Number of commits fetched from the database:', commits.length);
+
+    // Step 2: Format the commits for summarization
+    const formattedCommits = commits.map(commit => ({
       sha: commit.sha,
       commit: {
-        message: commit.commit.message,
+        message: commit.message,
         author: {
-          name: commit.commit.author.name,
-          date: commit.commit.author.date,
+          name: commit.author,
+          date: commit.date.toISOString(), // Convert date to ISO string for consistency
         },
       },
     }));
 
     console.log('Summarizing commits...');
-    const summary = await summarizeCommits(commits);
+    const summary = await summarizeCommits(formattedCommits);
 
     console.log('Summary generated successfully:', summary);
     res.json(summary);
@@ -320,16 +320,10 @@ app.get('/api/dashboard/summarize/:repoFullName', async (req: Request, res: Resp
       console.error('Error message:', error.message);
       console.error('Error stack:', error.stack);
     }
-    if (axios.isAxiosError(error)) {
-      console.error('Axios error response:', error.response?.data);
-      return res.status(error.response?.status || 500).json({ 
-        error: 'Failed to summarize commits', 
-        details: error.response?.data 
-      });
-    }
     res.status(500).json({ error: 'Failed to summarize commits', details: 'Check server logs for more information' });
   }
 });
+
 
 const PORT = process.env.PORT || 3004;
 app.listen(PORT, () => {
