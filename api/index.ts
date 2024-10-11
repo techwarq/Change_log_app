@@ -3,6 +3,7 @@ import cors from 'cors';
 import { PrismaClient } from '@prisma/client';
 import axios from 'axios';
 import dotenv from 'dotenv';
+import { summarizeCommits, GitHubCommitData, CommitSummary } from './aiSum'
 
 dotenv.config();
 
@@ -234,6 +235,57 @@ app.get('/api/dashboard/commits/:repoFullName', async (req: Request, res: Respon
   }
 });
 
+
+
+app.get('/api/summarize-commits/:repoFullName', async (req: Request, res: Response) => {
+  const { repoFullName } = req.params;
+  const { userId, since = '2019-05-06T00:00:00Z' } = req.query;
+
+  // Validate userId
+  if (!userId || typeof userId !== 'string') {
+    return res.status(400).json({ error: 'Invalid userId' });
+  }
+
+  try {
+    // Check if the user exists
+    const user = await prisma.user.findUnique({ where: { id: parseInt(userId) } });
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Fetch commits for the specified repository and time frame
+    const commits = await prisma.commit.findMany({
+      where: {
+        id: user.id, // Assuming you have a userId field in Commit
+        // You may need to add a repository field to the Commit model if necessary
+        timestamp: { gte: new Date(since as string) }
+      },
+      orderBy: { timestamp: 'desc' },
+      take: 100
+    });
+
+    // Map commits to GitHubCommit format
+    const githubCommits: GitHubCommit[] = commits.map(commit => ({
+      sha: commit.sha,
+      commit: {
+        message: commit.message,
+        author: {
+          name: commit.author, // Author field from Commit
+          date: commit.timestamp.toISOString() // Format date correctly
+        }
+      }
+    }));
+
+    // Summarize commits using the provided summarizeCommits function
+    const summary: CommitSummary = await summarizeCommits(githubCommits);
+
+    // Send the summary response
+    res.json(summary);
+  } catch (error) {
+    console.error('Error summarizing commits:', error);
+    res.status(500).json({ error: 'Failed to summarize commits' });
+  }
+});
 const PORT = process.env.PORT || 3004;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
