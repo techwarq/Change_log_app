@@ -4,7 +4,7 @@ import { PrismaClient } from '@prisma/client';
 import axios from 'axios';
 import dotenv from 'dotenv';
 import { summarizeCommits, GitHubCommitData, CommitSummary } from './aiSum'
-
+import publicRepoRoutes from './publicLogs';
 dotenv.config();
 
 const app = express();
@@ -323,6 +323,8 @@ app.get('/api/dashboard/summarize/:repoFullName', async (req: Request, res: Resp
     res.status(500).json({ error: 'Failed to summarize commits', details: 'Check server logs for more information' });
   }
 });
+
+app.use('/public', publicRepoRoutes);
 
 
 const PORT = process.env.PORT || 3004;
