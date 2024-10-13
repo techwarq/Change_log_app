@@ -1,16 +1,17 @@
 // repos.ts
 export const repositories = [
     {
+      owner: 'artie-labs',
       name: 'Transfer',
-      url: 'https://github.com/artie-labs/transfer',
     },
     {
+      owner: 'continuedev',
       name: 'Continue',
-      url: 'https://github.com/continuedev/continue',
+      
     },
     {
-      name: 'OpenSearch AI',
-      url: 'https://github.com/supermemoryai/opensearch-ai',
+        owner: 'refinedev',
+        name: 'refine',
+
     },
-  ];
-  
+];

@@ -324,7 +324,7 @@ app.get('/api/dashboard/summarize/:repoFullName', async (req: Request, res: Resp
   }
 });
 
-app.use('/public', publicRepoRoutes);
+app.use('/api/public', publicRepoRoutes);
 
 
 const PORT = process.env.PORT || 3004;

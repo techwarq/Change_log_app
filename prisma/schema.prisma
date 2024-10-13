@@ -35,5 +35,12 @@ model PullRequest {
   description String
   createdAt   DateTime @default(now())
   closedAt    DateTime?
+  repo        Repo     @relation(fields: [repoId], references: [id])
+  repoId      Int
 }
 
+model Repo {
+  id           Int           @id @default(autoincrement())
+  fullName     String        @unique
+  pullRequests PullRequest[]
+}
