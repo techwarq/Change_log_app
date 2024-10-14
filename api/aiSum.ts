@@ -137,7 +137,7 @@ export const summarizePullRequests = async (repoId: number): Promise<PRSummary[]
          // Ensure we're only getting closed PRs
       },
       
-      take: 10 // Limit to 5 results
+      take: 5 // Limit to 5 results
     });
 
     if (pullRequests.length === 0) {
