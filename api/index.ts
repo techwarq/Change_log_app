@@ -87,7 +87,7 @@ app.get('/oauth-callback', async ({ query: { code } }, res) => {
 
     console.log('User created in database:', user.id);
 
-    const redirectUrl = `http://change-log-app.vercel.app/dashboard?userId=${user.id}`;
+    const redirectUrl = `http://change-log-ui.vercel.app/dashboard?userId=${user.id}`;
     console.log('Redirecting to:', redirectUrl);
     return res.redirect(redirectUrl);
   } catch (error) {
@@ -121,26 +121,14 @@ app.get('/dashboard', async (req: Request, res: Response) => {
       },
     });
 
-    const repoLinks = response.data.map(repo => `
-      <li>
-        <a href="/api/dashboard/commits/${encodeURIComponent(repo.full_name)}?userId=${userId}" target="_blank">
-          ${repo.name}
-        </a>
-      </li>
-    `).join('');
+    const repos = response.data.map(repo => ({
+      id: repo.id,
+      name: repo.name,
+      full_name: repo.full_name,
+      default_branch: repo.default_branch
+    }));
 
-    const html = `
-      <html>
-        <body>
-          <h1>Your Repositories</h1>
-          <ul>
-            ${repoLinks}
-          </ul>
-        </body>
-      </html>
-    `;
-
-    res.send(html);
+    res.json(repos);
   } catch (error) {
     console.error('Error fetching repositories:', error);
     res.status(500).json({ error: 'Failed to fetch repositories' });
