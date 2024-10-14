@@ -39,22 +39,15 @@ router.get('/repos', async (req: Request, res: Response) => {
     repositories.map(repo => saveRepoDetails(repo.owner, repo.name))
   );
 
-  // Generate clickable HTML list of repositories
-  const repoList = repositories
-    .map((repo, index) => `<li><a href="/api/public/repos/${repo.owner}/${repo.name}/changelogs">${repo.name} (ID: ${repoIds[index]})</a></li>`)
-    .join('');
+  // Generate the response as JSON
+  const reposResponse = repositories.map((repo, index) => ({
+    owner: repo.owner,
+    name: repo.name,
+    id: repoIds[index], // Include the ID for reference
+  }));
 
-  // Send the HTML response
-  res.send(`
-    <html>
-      <body>
-        <h1>Public Repositories</h1>
-        <ul>
-          ${repoList}
-        </ul>
-      </body>
-    </html>
-  `);
+  // Send the JSON response
+  res.json(reposResponse);
 });
 
 // Route to get pull requests for a specific repository
