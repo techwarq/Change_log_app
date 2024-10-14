@@ -85,11 +85,10 @@ app.get('/oauth-callback', async ({ query: { code } }, res) => {
       },
     });
 
-    console.log('User created in database:', user.id);
-
-    const redirectUrl = `http://change-log-app.vercel.app/dashboard?userId=${user.id}`;
-    console.log('Redirecting to:', redirectUrl);
-    return res.redirect(redirectUrl);
+    return res.json({
+      userId: user.id,
+      accessToken: access_token,
+    });
   } catch (error) {
     console.error('Error during GitHub authentication:', error);
     if (axios.isAxiosError(error) && error.response) {
