@@ -285,7 +285,9 @@ app.get('/api/dashboard/summarize/:owner/:repo', async (req: Request, res: Respo
       where: {
         repoFullName: repoFullName,
        
+       
       },
+      take: 5 ,
       orderBy: {
         date: 'asc',
       },
