@@ -55,9 +55,11 @@ app.get('/auth', (req: Request, res: Response) => {
   res.redirect(`https://github.com/login/oauth/authorize?client_id=${process.env.CLIENT_ID}`);
 });
 
-app.get('/oauth-callback', async ({ query: { code } }, res) => {
-  if (!code) {
-    return res.status(400).json({ error: 'Missing code parameter' });
+app.get('/oauth-callback', async (req, res) => {
+  const { code } = req.query;
+
+  if (!code || typeof code !== 'string') {
+    return res.status(400).json({ error: 'Missing or invalid code parameter' });
   }
 
   const body = {
@@ -85,53 +87,18 @@ app.get('/oauth-callback', async ({ query: { code } }, res) => {
       },
     });
 
-    return res.json({
-      userId: user.id,
-      accessToken: access_token,
-    });
+    // Redirect to frontend with user ID and access token as query parameters
+    const frontendURL = process.env.FRONTEND_URL || 'https://change-log-ui.vercel.app';
+    const redirectURL = `${frontendURL}/developer?userId=${user.id}&accessToken=${access_token}`;
+    return res.redirect(redirectURL);
   } catch (error) {
     console.error('Error during GitHub authentication:', error);
     if (axios.isAxiosError(error) && error.response) {
       console.error('GitHub API error response:', error.response.data);
     }
-    return res.status(500).json({ error: 'Authentication failed' });
-  }
-});
-
-app.get('/dashboard', async (req: Request, res: Response) => {
-  const { userId } = req.query;
-
-  if (!userId) {
-    return res.status(400).json({ error: 'Missing userId' });
-  }
-
-  try {
-    const user = await prisma.user.findUnique({
-      where: { id: parseInt(userId as string) },
-    });
-
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    const response = await axios.get<GitHubRepo[]>('https://api.github.com/user/repos', {
-      headers: {
-        Authorization: `token ${user.githubToken}`,
-      },
-    });
-
-    const repos = response.data.map(repo => ({
-      id: repo.id,
-      name: repo.name,
-      full_name: repo.full_name,
-      default_branch: repo.default_branch
-    }));
-
-    res.json(repos);
-  } catch (error) {
-    console.error('Error fetching repositories:', error);
-    res.status(500).json({ error: 'Failed to fetch repositories' });
-  }
+    const frontendURL = process.env.FRONTEND_URL || 'https://change-log-ui.vercel.app';
+    return res.redirect(`${frontendURL}/developer?error=Authentication failed`);
+  } 
 });
 app.get('/api/dashboard/commits/:repoFullName', async (req: Request, res: Response) => {
   console.log('Received request for commits:', req.params, req.query);
