@@ -55,50 +55,76 @@ app.get('/auth', (req: Request, res: Response) => {
   res.redirect(`https://github.com/login/oauth/authorize?client_id=${process.env.CLIENT_ID}`);
 });
 
-app.get('/oauth-callback', async (req, res) => {
+
+app.get('/auth/callback', async (req, res) => {
   const { code } = req.query;
-
-  if (!code || typeof code !== 'string') {
-    return res.status(400).json({ error: 'Missing or invalid code parameter' });
-  }
-
-  const body = {
-    client_id: process.env.CLIENT_ID,
-    client_secret: process.env.CLIENT_SECRET,
-    code,
-  };
-
-  const opts = { headers: { accept: 'application/json' } };
+  const redirectURI = req.query.redirect_uri || 'https://change-log-ui.vercel.app/dashboard';
 
   try {
-    const response = await axios.post<GitHubAuthResponse>('https://github.com/login/oauth/access_token', body, opts);
-    const { access_token } = response.data;
+    // Exchange code for GitHub access token
+    const response = await axios.post(
+      'https://github.com/login/oauth/access_token',
+      {
+        client_id: process.env.CLIENT_ID,
+        client_secret: process.env.CLIENT_SECRET,
+        code,
+      },
+      {
+        headers: { accept: 'application/json' },
+      }
+    );
 
-    if (!access_token) {
-      console.error('No access token received from GitHub');
-      return res.status(500).json({ error: 'Failed to obtain access token' });
+    const accessToken = response.data.access_token;
+
+    // Fetch the authenticated user information from GitHub
+    const userResponse = await axios.get('https://api.github.com/user', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    const userId = userResponse.data.id;  // GitHub user ID
+
+    // Redirect to the frontend with accessToken and userId as query params
+    res.redirect(`${redirectURI}?accessToken=${accessToken}&userId=${userId}`);
+  } catch (error) {
+    console.error('GitHub OAuth error:', error);
+    res.redirect(`${redirectURI}?error=OAuth failed`);
+  }
+});
+
+app.get('/dashboard', async (req: Request, res: Response) => {
+  const { userId } = req.query;
+
+  if (!userId) {
+    return res.status(400).json({ error: 'Missing userId' });
+  }
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: parseInt(userId as string) },
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
     }
 
-    console.log('Access token obtained successfully');
-
-    const user = await prisma.user.create({
-      data: {
-        githubToken: access_token,
+    const response = await axios.get<GitHubRepo[]>('https://api.github.com/user/repos', {
+      headers: {
+        Authorization: `token ${user.githubToken}`,
       },
     });
 
-    // Redirect to frontend with user ID and access token as query parameters
-    const frontendURL = process.env.FRONTEND_URL || 'https://change-log-ui.vercel.app';
-    const redirectURL = `${frontendURL}/developer?userId=${user.id}&accessToken=${access_token}`;
-    return res.redirect(redirectURL);
+    const repos = response.data.map(repo => ({
+      id: repo.id,
+      name: repo.name,
+      full_name: repo.full_name,
+      default_branch: repo.default_branch
+    }));
+
+    res.json(repos);
   } catch (error) {
-    console.error('Error during GitHub authentication:', error);
-    if (axios.isAxiosError(error) && error.response) {
-      console.error('GitHub API error response:', error.response.data);
-    }
-    const frontendURL = process.env.FRONTEND_URL || 'https://change-log-ui.vercel.app';
-    return res.redirect(`${frontendURL}/developer?error=Authentication failed`);
-  } 
+    console.error('Error fetching repositories:', error);
+    res.status(500).json({ error: 'Failed to fetch repositories' });
+  }
 });
 app.get('/api/dashboard/commits/:repoFullName', async (req: Request, res: Response) => {
   console.log('Received request for commits:', req.params, req.query);
