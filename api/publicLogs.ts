@@ -30,9 +30,12 @@ const saveRepoDetails = async (owner: string, name: string): Promise<number> => 
   }
 };
 
-// Route to handle getting and saving repositories
+// Function to extract owner and repo name from GitHub URL
+
+
+// Route to handle getting and saving predefined repositories
 router.get('/repos', async (req: Request, res: Response) => {
-  console.log('Received request for repos:', req.params, req.query);
+  console.log('Received request for predefined repos');
 
   // Save each repository and get its repoId
   const repoIds = await Promise.all(
@@ -50,7 +53,9 @@ router.get('/repos', async (req: Request, res: Response) => {
   res.json(reposResponse);
 });
 
-// Route to get pull requests for a specific repository
+
+
+// Route to get pull requests for a specific repository (works for both predefined and custom repos)
 router.get('/repos/:owner/:repo/changelogs', async (req: Request, res: Response) => {
   const { owner, repo } = req.params;
   const cacheKey = `changelog_${owner}_${repo}`;
@@ -64,9 +69,17 @@ router.get('/repos/:owner/:repo/changelogs', async (req: Request, res: Response)
     }
 
     const repoFullName = `${owner}/${repo}`;
-    const repoRecord = await prisma.repo.findUnique({
+    let repoRecord = await prisma.repo.findUnique({
       where: { fullName: repoFullName },
     });
+
+    if (!repoRecord) {
+      // If the repo is not in our database, save it
+      const repoId = await saveRepoDetails(owner, repo);
+      repoRecord = await prisma.repo.findUnique({
+        where: { id: repoId },
+      });
+    }
 
     if (!repoRecord) {
       return res.status(404).send('Repository not found');
@@ -93,7 +106,7 @@ router.get('/repos/:owner/:repo/changelogs', async (req: Request, res: Response)
             data: {
               title: pr.title,
               description: pr.body || 'No description provided',
-              repoId: repoRecord.id,
+              repoId: repoRecord!.id,
               ...(pr.closed_at && { closedAt: new Date(pr.closed_at) }),
             },
           });
