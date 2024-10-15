@@ -66,11 +66,11 @@ export const summarizeCommits = async (commits: GitHubCommitData[]): Promise<Com
     console.warn('No commits provided for summarization');
     return [{ name: 'No Changes', description: 'No commits were provided for summarization.', tags: ['empty'] }];
   }
-
+  const recentCommits = commits.slice(0, 5);
   const commitSummaries: CommitSummary[] = [];
 
   try {
-    for (const commit of commits) {
+    for (const commit of recentCommits) {
       console.log(`Summarizing commit with sha: ${commit.sha}`);
 
       // Prepare the commit message for summarization
@@ -92,7 +92,7 @@ export const summarizeCommits = async (commits: GitHubCommitData[]): Promise<Com
 
   } catch (error) {
     console.error('Error in summarizeCommits:', error);
-    return commits.map(() => ({
+    return recentCommits.map(() => ({
       name: 'Error in Summarization',
       description: 'An error occurred while trying to summarize the commit. Please try again later or contact support if the problem persists.',
       tags: ['error']
