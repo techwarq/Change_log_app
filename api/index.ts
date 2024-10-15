@@ -140,15 +140,21 @@ app.get('/dashboard', async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Failed to fetch repositories' });
   }
 });
-app.get('/api/dashboard/commits/:repoFullName', async (req: Request, res: Response) => {
-  console.log('Received request for commits:', req.params, req.query);
-  const repoFullName = decodeURIComponent(req.params.repoFullName);
-  const { userId, since = '2019-05-06T00:00:00Z' } = req.query;
+app.get('/api/dashboard/commits', async (req: Request, res: Response) => {
+  console.log('Received request for commits:', req.query);
+  const { repo, userId, since = '2019-05-06T00:00:00Z' } = req.query;
+
+  if (!repo || typeof repo !== 'string') {
+    console.log('Invalid repo:', repo);
+    return res.status(400).json({ error: 'Invalid repo parameter' });
+  }
 
   if (!userId || typeof userId !== 'string') {
     console.log('Invalid userId:', userId);
     return res.status(400).json({ error: 'Invalid userId' });
   }
+
+  const repoFullName = decodeURIComponent(repo);
 
   try {
     console.log('Fetching user from database...');
@@ -161,15 +167,15 @@ app.get('/api/dashboard/commits/:repoFullName', async (req: Request, res: Respon
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const [owner, repo] = repoFullName.split('/');
-    if (!owner || !repo) {
+    const [owner, repoName] = repoFullName.split('/');
+    if (!owner || !repoName) {
       return res.status(400).json({ error: 'Invalid repository name format' });
     }
 
     // Step 1: Fetch repository details to get the default branch
     console.log('Fetching repository details...');
     const repoResponse = await axios.get<GitHubRepo>(
-      `https://api.github.com/repos/${owner}/${repo}`,
+      `https://api.github.com/repos/${owner}/${repoName}`,
       {
         headers: {
           Authorization: `token ${user.githubToken}`,
@@ -181,7 +187,7 @@ app.get('/api/dashboard/commits/:repoFullName', async (req: Request, res: Respon
     // Step 2: Fetch the SHA of the default branch
     console.log('Fetching default branch SHA...');
     const branchResponse = await axios.get<GitHubBranch>(
-      `https://api.github.com/repos/${owner}/${repo}/branches/${defaultBranch}`,
+      `https://api.github.com/repos/${owner}/${repoName}/branches/${defaultBranch}`,
       {
         headers: {
           Authorization: `token ${user.githubToken}`,
@@ -193,7 +199,7 @@ app.get('/api/dashboard/commits/:repoFullName', async (req: Request, res: Respon
     // Step 3: Fetch commits using the SHA
     console.log('Fetching commits from GitHub...');
     const commitsResponse = await axios.get<GitHubCommit[]>(
-      `https://api.github.com/repos/${owner}/${repo}/commits`,
+      `https://api.github.com/repos/${owner}/${repoName}/commits`,
       {
         params: {
           sha: sha,
@@ -211,8 +217,8 @@ app.get('/api/dashboard/commits/:repoFullName', async (req: Request, res: Respon
       sha: commit.sha,
       message: commit.commit.message,
       author: commit.commit.author.name,
-      date: new Date(commit.commit.author.date), // Convert to Date object
-      repoFullName: repoFullName, // Add repoFullName to each commit
+      date: new Date(commit.commit.author.date),
+      repoFullName: repoFullName,
     }));
 
     // Step 4: Save commits in the database
@@ -249,17 +255,21 @@ app.get('/api/dashboard/commits/:repoFullName', async (req: Request, res: Respon
   }
 });
 
+app.get('/api/dashboard/summarize', async (req: Request, res: Response) => {
+  console.log('Received request for commit summarization:', req.query);
+  const { repo, userId, since = '2019-05-06T00:00:00Z' } = req.query;
 
-
-app.get('/api/dashboard/summarize/:repoFullName', async (req: Request, res: Response) => {
-  console.log('Received request for commit summarization:', req.params, req.query);
-  const repoFullName = decodeURIComponent(req.params.repoFullName);
-  const { userId, since = '2019-05-06T00:00:00Z' } = req.query;
+  if (!repo || typeof repo !== 'string') {
+    console.log('Invalid repo:', repo);
+    return res.status(400).json({ error: 'Invalid repo parameter' });
+  }
 
   if (!userId || typeof userId !== 'string') {
     console.log('Invalid userId:', userId);
     return res.status(400).json({ error: 'Invalid userId' });
   }
+
+  const repoFullName = decodeURIComponent(repo);
 
   try {
     console.log('Fetching user from database...');
@@ -272,8 +282,8 @@ app.get('/api/dashboard/summarize/:repoFullName', async (req: Request, res: Resp
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const [owner, repo] = repoFullName.split('/');
-    if (!owner || !repo) {
+    const [owner, repoName] = repoFullName.split('/');
+    if (!owner || !repoName) {
       return res.status(400).json({ error: 'Invalid repository name format' });
     }
 
@@ -285,7 +295,7 @@ app.get('/api/dashboard/summarize/:repoFullName', async (req: Request, res: Resp
         
       },
       orderBy: {
-        date: 'asc', // Order commits by date, if needed
+        date: 'asc',
       },
     });
 
@@ -298,7 +308,7 @@ app.get('/api/dashboard/summarize/:repoFullName', async (req: Request, res: Resp
         message: commit.message,
         author: {
           name: commit.author,
-          date: commit.date.toISOString(), // Convert date to ISO string for consistency
+          date: commit.date.toISOString(),
         },
       },
     }));
@@ -317,7 +327,6 @@ app.get('/api/dashboard/summarize/:repoFullName', async (req: Request, res: Resp
     res.status(500).json({ error: 'Failed to summarize commits', details: 'Check server logs for more information' });
   }
 });
-
 app.use('/api/public', publicRepoRoutes);
 
 
