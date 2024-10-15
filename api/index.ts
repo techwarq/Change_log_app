@@ -42,7 +42,7 @@ interface GitHubCommit {
 }
 
 app.use(cors({
-  origin: ['https://change-log-app.vercel.app', 'http://localhost:3001', 'https://change-log-ui.vercel.app'],
+  origin: ['https://change-log-app.vercel.app', 'http://localhost:3001', 'https://change-log-ui.vercel.app', 'https://track-logs.vercel.app/'],
   credentials: true,
 }));
 app.use(express.json());
