@@ -142,7 +142,7 @@ app.get('/dashboard', async (req: Request, res: Response) => {
 });
 app.get('/api/dashboard/commits/:repoFullName', async (req: Request, res: Response) => {
   console.log('Received request for commits:', req.params, req.query);
-  const { repoFullName } = req.params;
+  const repoFullName = decodeURIComponent(req.params.repoFullName);
   const { userId, since = '2019-05-06T00:00:00Z' } = req.query;
 
   if (!userId || typeof userId !== 'string') {
@@ -253,7 +253,7 @@ app.get('/api/dashboard/commits/:repoFullName', async (req: Request, res: Respon
 
 app.get('/api/dashboard/summarize/:repoFullName', async (req: Request, res: Response) => {
   console.log('Received request for commit summarization:', req.params, req.query);
-  const { repoFullName } = req.params;
+  const repoFullName = decodeURIComponent(req.params.repoFullName);
   const { userId, since = '2019-05-06T00:00:00Z' } = req.query;
 
   if (!userId || typeof userId !== 'string') {
