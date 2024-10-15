@@ -88,7 +88,7 @@ app.get('/oauth-callback', async ({ query: { code } }, res) => {
     });
 
     // Step 3: Redirect to frontend dashboard
-    const frontendUrl = `https://change-log-ui.vercel.app/dashboard?userId=${user.id}&token=${access_token}`;
+    const frontendUrl = `https://track-logs.vercel.app/dashboard?userId=${user.id}&token=${access_token}`;
 
     console.log('Redirecting to frontend dashboard:', frontendUrl);
 
