@@ -140,13 +140,14 @@ app.get('/dashboard', async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Failed to fetch repositories' });
   }
 });
-app.get('/api/dashboard/commits', async (req: Request, res: Response) => {
-  console.log('Received request for commits:', req.query);
-  const { repo, userId, since = '2019-05-06T00:00:00Z' } = req.query;
+app.get('/api/dashboard/commits/:owner/:repo', async (req: Request, res: Response) => {
+  console.log('Received request for commits:', req.params, req.query);
+  const { owner, repo } = req.params;
+  const { userId, since = '2019-05-06T00:00:00Z' } = req.query;
 
-  if (!repo || typeof repo !== 'string') {
-    console.log('Invalid repo:', repo);
-    return res.status(400).json({ error: 'Invalid repo parameter' });
+  if (!owner || !repo) {
+    console.log('Invalid owner or repo:', owner, repo);
+    return res.status(400).json({ error: 'Invalid owner or repo parameter' });
   }
 
   if (!userId || typeof userId !== 'string') {
@@ -154,7 +155,7 @@ app.get('/api/dashboard/commits', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Invalid userId' });
   }
 
-  const repoFullName = decodeURIComponent(repo);
+  const repoFullName = `${owner}/${repo}`;
 
   try {
     console.log('Fetching user from database...');
@@ -167,15 +168,10 @@ app.get('/api/dashboard/commits', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const [owner, repoName] = repoFullName.split('/');
-    if (!owner || !repoName) {
-      return res.status(400).json({ error: 'Invalid repository name format' });
-    }
-
     // Step 1: Fetch repository details to get the default branch
     console.log('Fetching repository details...');
     const repoResponse = await axios.get<GitHubRepo>(
-      `https://api.github.com/repos/${owner}/${repoName}`,
+      `https://api.github.com/repos/${repoFullName}`,
       {
         headers: {
           Authorization: `token ${user.githubToken}`,
@@ -187,7 +183,7 @@ app.get('/api/dashboard/commits', async (req: Request, res: Response) => {
     // Step 2: Fetch the SHA of the default branch
     console.log('Fetching default branch SHA...');
     const branchResponse = await axios.get<GitHubBranch>(
-      `https://api.github.com/repos/${owner}/${repoName}/branches/${defaultBranch}`,
+      `https://api.github.com/repos/${repoFullName}/branches/${defaultBranch}`,
       {
         headers: {
           Authorization: `token ${user.githubToken}`,
@@ -199,7 +195,7 @@ app.get('/api/dashboard/commits', async (req: Request, res: Response) => {
     // Step 3: Fetch commits using the SHA
     console.log('Fetching commits from GitHub...');
     const commitsResponse = await axios.get<GitHubCommit[]>(
-      `https://api.github.com/repos/${owner}/${repoName}/commits`,
+      `https://api.github.com/repos/${repoFullName}/commits`,
       {
         params: {
           sha: sha,
@@ -255,13 +251,14 @@ app.get('/api/dashboard/commits', async (req: Request, res: Response) => {
   }
 });
 
-app.get('/api/dashboard/summarize', async (req: Request, res: Response) => {
-  console.log('Received request for commit summarization:', req.query);
-  const { repo, userId, since = '2019-05-06T00:00:00Z' } = req.query;
+app.get('/api/dashboard/summarize/:owner/:repo', async (req: Request, res: Response) => {
+  console.log('Received request for commit summarization:', req.params, req.query);
+  const { owner, repo } = req.params;
+  const { userId, since = '2019-05-06T00:00:00Z' } = req.query;
 
-  if (!repo || typeof repo !== 'string') {
-    console.log('Invalid repo:', repo);
-    return res.status(400).json({ error: 'Invalid repo parameter' });
+  if (!owner || !repo) {
+    console.log('Invalid owner or repo:', owner, repo);
+    return res.status(400).json({ error: 'Invalid owner or repo parameter' });
   }
 
   if (!userId || typeof userId !== 'string') {
@@ -269,7 +266,7 @@ app.get('/api/dashboard/summarize', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Invalid userId' });
   }
 
-  const repoFullName = decodeURIComponent(repo);
+  const repoFullName = `${owner}/${repo}`;
 
   try {
     console.log('Fetching user from database...');
@@ -282,17 +279,12 @@ app.get('/api/dashboard/summarize', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const [owner, repoName] = repoFullName.split('/');
-    if (!owner || !repoName) {
-      return res.status(400).json({ error: 'Invalid repository name format' });
-    }
-
     // Step 1: Fetch commits from the database
     console.log('Fetching commits from database...');
     const commits = await prisma.commit.findMany({
       where: {
         repoFullName: repoFullName,
-        
+       
       },
       orderBy: {
         date: 'asc',
@@ -327,6 +319,8 @@ app.get('/api/dashboard/summarize', async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Failed to summarize commits', details: 'Check server logs for more information' });
   }
 });
+
+
 app.use('/api/public', publicRepoRoutes);
 
 
