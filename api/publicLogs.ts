@@ -89,14 +89,19 @@ router.get('/repos/:owner/:repo/changelogs', async (req: Request, res: Response)
     const recentPRs = await prisma.pullRequest.findMany({
       where: {
         repoId: repoRecord.id,
-        createdAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } // PRs created in the last 24 hours
-      }
+        createdAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }, // PRs created in the last 24 hours
+      },
     });
 
     let pullRequests;
     if (recentPRs.length === 0) {
-      // If no recent PRs, fetch from GitHub API
-      const response = await axios.get(`https://api.github.com/repos/${owner}/${repo}/pulls?state=closed`);
+      // If no recent PRs, fetch from GitHub API (limit to 5 PRs)
+      const response = await axios.get(`https://api.github.com/repos/${owner}/${repo}/pulls`, {
+        params: {
+          state: 'closed',
+          per_page: 5, // Fetch only 5 pull requests
+        },
+      });
       pullRequests = response.data;
 
       // Save pull requests to the database
