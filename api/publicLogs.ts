@@ -102,7 +102,7 @@ router.get('/repos/:owner/:repo/changelogs', async (req: Request, res: Response)
       // Save pull requests to the database
       await Promise.all(
         pullRequests.map(async (pr: any) => {
-          await prisma.pullRequest.create({
+          await prisma.pullRequest.createMany({
             data: {
               title: pr.title,
               description: pr.body || 'No description provided',
