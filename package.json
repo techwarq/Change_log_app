@@ -28,6 +28,7 @@
         "express-session": "^1.18.1",
         "groq-sdk": "^0.7.0",
         "helmet": "^7.1.0",
+        "ioredis": "^5.4.1",
         "langchain": "^0.3.2",
         "morgan": "^1.10.0",
         "node-cache": "^5.1.2",

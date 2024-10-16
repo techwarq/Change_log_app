@@ -3,13 +3,14 @@ import { repositories } from './const';
 import axios from 'axios';
 import { PrismaClient } from '@prisma/client';
 import { summarizePullRequests } from './aiSum';
-import NodeCache from 'node-cache';
-
+import Redis from 'ioredis';
+import dotenv from 'dotenv';
+dotenv.config();
 const router = Router();
 const prisma = new PrismaClient();
 
-// Initialize cache with a default TTL of 10 minutes
-const cache = new NodeCache({ stdTTL: 600 });
+// Initialize Redis client
+const redisClient = new Redis(process.env.REDIS_URL || "redis://localhost:6379");
 
 // Function to save repository details in the database
 const saveRepoDetails = async (owner: string, name: string): Promise<number> => {
@@ -29,9 +30,6 @@ const saveRepoDetails = async (owner: string, name: string): Promise<number> => 
     throw new Error('Unable to save repo details');
   }
 };
-
-// Function to extract owner and repo name from GitHub URL
-
 
 // Route to handle getting and saving predefined repositories
 router.get('/repos', async (req: Request, res: Response) => {
@@ -53,19 +51,17 @@ router.get('/repos', async (req: Request, res: Response) => {
   res.json(reposResponse);
 });
 
-
-
 // Route to get pull requests for a specific repository (works for both predefined and custom repos)
 router.get('/repos/:owner/:repo/changelogs', async (req: Request, res: Response) => {
   const { owner, repo } = req.params;
   const cacheKey = `changelog_${owner}_${repo}`;
 
   try {
-    // Check cache first
-    const cachedData = cache.get(cacheKey);
+    // Check Redis cache first
+    const cachedData = await redisClient.get(cacheKey);
     if (cachedData) {
       console.log('Returning cached data for', cacheKey);
-      return res.json(cachedData);
+      return res.json(JSON.parse(cachedData));
     }
 
     const repoFullName = `${owner}/${repo}`;
@@ -120,8 +116,8 @@ router.get('/repos/:owner/:repo/changelogs', async (req: Request, res: Response)
     // Use the AI summarization function
     const summarizedPullRequests = await summarizePullRequests(repoRecord.id);
 
-    // Cache the result
-    cache.set(cacheKey, summarizedPullRequests);
+    // Cache the result in Redis
+    await redisClient.set(cacheKey, JSON.stringify(summarizedPullRequests), 'EX', 3600); // Cache for 10 minutes
 
     // Send the summarized pull requests as JSON
     res.json(summarizedPullRequests);

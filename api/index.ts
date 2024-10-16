@@ -5,10 +5,13 @@ import axios from 'axios';
 import dotenv from 'dotenv';
 import { summarizeCommits, GitHubCommitData, CommitSummary } from './aiSum'
 import publicRepoRoutes from './publicLogs';
+import Redis from 'ioredis';
 dotenv.config();
 
 const app = express();
 const prisma = new PrismaClient();
+
+const redisClient = new Redis(process.env.REDIS_URL || "redis://localhost:6379");
 
 interface GitHubAuthResponse {
   access_token: string;
@@ -107,12 +110,20 @@ app.get('/oauth-callback', async ({ query: { code } }, res) => {
 
 app.get('/dashboard', async (req: Request, res: Response) => {
   const { userId } = req.query;
+  
 
   if (!userId) {
     return res.status(400).json({ error: 'Missing userId' });
   }
+  const cacheKey = `dashboard:${userId}`;
 
   try {
+    const cachedData = await redisClient.get(cacheKey);
+    if (cachedData) {
+      console.log('Returning cached data for dashboard');
+      return res.json(JSON.parse(cachedData));
+    }
+
     const user = await prisma.user.findUnique({
       where: { id: parseInt(userId as string) },
     });
@@ -134,11 +145,16 @@ app.get('/dashboard', async (req: Request, res: Response) => {
       default_branch: repo.default_branch
     }));
 
+
+    await redisClient.set(cacheKey, JSON.stringify(repos), 'EX', 3600); // Cache for 1 hour
+
+
     res.json(repos);
   } catch (error) {
     console.error('Error fetching repositories:', error);
     res.status(500).json({ error: 'Failed to fetch repositories' });
   }
+  
 });
 app.get('/api/dashboard/commits/:owner/:repo', async (req: Request, res: Response) => {
   console.log('Received request for commits:', req.params, req.query);
@@ -156,8 +172,15 @@ app.get('/api/dashboard/commits/:owner/:repo', async (req: Request, res: Respons
   }
 
   const repoFullName = `${owner}/${repo}`;
+  const cacheKey = `commits:${repoFullName}:${userId}:${since}`;
 
   try {
+
+    const cachedData = await redisClient.get(cacheKey);
+    if (cachedData) {
+      console.log('Returning cached data for commits');
+      return res.json(JSON.parse(cachedData));
+    }
     console.log('Fetching user from database...');
     const user = await prisma.user.findUnique({
       where: { id: parseInt(userId) },
@@ -235,6 +258,7 @@ app.get('/api/dashboard/commits/:owner/:repo', async (req: Request, res: Respons
 
     // Execute all upsert operations concurrently
     await Promise.all(upsertPromises);
+    await redisClient.set(cacheKey, JSON.stringify(commits), 'EX', 1800); // Ca
 
     console.log('Sending response...');
     res.json(commits);
@@ -267,8 +291,15 @@ app.get('/api/dashboard/summarize/:owner/:repo', async (req: Request, res: Respo
   }
 
   const repoFullName = `${owner}/${repo}`;
+  const cacheKey = `summary:${repoFullName}:${userId}:${since}`;
 
   try {
+
+    const cachedData = await redisClient.get(cacheKey);
+    if (cachedData) {
+      console.log('Returning cached data for summary');
+      return res.json(JSON.parse(cachedData));
+    }
     console.log('Fetching user from database...');
     const user = await prisma.user.findUnique({
       where: { id: parseInt(userId) },
@@ -309,7 +340,7 @@ app.get('/api/dashboard/summarize/:owner/:repo', async (req: Request, res: Respo
 
     console.log('Summarizing commits...');
     const summary = await summarizeCommits(formattedCommits);
-
+    await redisClient.set(cacheKey, JSON.stringify(summary), 'EX', 3600);
     console.log('Summary generated successfully:', summary);
     res.json(summary);
   } catch (error) {
