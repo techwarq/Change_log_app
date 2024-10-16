@@ -201,7 +201,7 @@ app.get('/api/dashboard/commits/:owner/:repo', async (req: Request, res: Respons
       {
         params: {
           sha: sha,
-          per_page: 100,
+          per_page: 5,
           since: since,
         },
         headers: {
